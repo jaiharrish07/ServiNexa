@@ -21,6 +21,9 @@ def _int(name: str, default: int) -> int:
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_BASE_URL = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+# GPT-OSS is a reasoning model; "low" leaves token headroom for the JSON answer and
+# avoids Groq's json_validate_failed. Set to "" to omit the param (non-reasoning models).
+GROQ_REASONING_EFFORT = os.environ.get("GROQ_REASONING_EFFORT", "low")
 
 # ─── Free-tier limits (enforced by rate_limiter) ───
 GROQ_RPM = _int("GROQ_RPM", 30)

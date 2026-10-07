@@ -156,7 +156,7 @@ class ImpactNode(BaseModel):
 
 class ImpactResponse(BaseModel):
     model_config = _ignore
-    root_machine_id: str
+    root_machine_id: str = ""  # router backfills from the request if the model omits it
     downstream_count: int = 0
     cascade_depth: int = 0
     affected_machines: list[str] = Field(default_factory=list)

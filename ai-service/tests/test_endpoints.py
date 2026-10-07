@@ -54,9 +54,14 @@ def test_ready_reports_budget():
     assert "budget" in r.json()
 
 
-# ─────────────────────────── stub-fallback contract (no Groq key) ───────────────────────────
-def test_classify_502_without_groq():
-    # No GROQ_API_KEY in the test env → chat_json raises → 502 (Express stubs).
+# ─────────────────────────── stub-fallback contract ───────────────────────────
+def test_endpoint_502_on_llm_failure(monkeypatch):
+    # Any LLM failure → 502 so Express falls back to its TS stub. Deterministic
+    # (forced failure) so it holds whether or not a GROQ_API_KEY is configured.
+    async def boom(*_a, **_k):
+        raise RuntimeError("groq down")
+
+    monkeypatch.setattr(pipeline, "chat_json", boom)
     r = client.post("/ai/classify-request", json={"description": "hydraulic leak"})
     assert r.status_code == 502
 
