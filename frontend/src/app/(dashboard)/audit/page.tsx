@@ -81,10 +81,11 @@ export default function AuditPage() {
     setVerifying(true);
     setVerifyResult(null);
     try {
-      const result = await api.get<{ valid: boolean; message?: string; details?: string }>('/api/audit/verify');
-      setVerifyResult(result);
-      if (result.valid) toast.success('Hash chain is valid');
-      else toast.error('Hash chain integrity check failed');
+      const res = await api.get<{ chain_verification: { valid: boolean; total_checked?: number; broken_at?: string }; message: string }>('/api/audit/verify');
+      const cv = res?.chain_verification ?? { valid: false };
+      setVerifyResult({ valid: cv.valid, message: res?.message, details: cv.broken_at ?? undefined });
+      if (cv.valid) toast.success(res?.message ?? 'Hash chain is valid');
+      else toast.error(res?.message ?? 'Hash chain integrity check failed');
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Verification failed');
     } finally {

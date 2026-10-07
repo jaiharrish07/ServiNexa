@@ -41,6 +41,8 @@ export default function SparePartsPage() {
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [selectedPart, setSelectedPart] = useState<SparePart | null>(null);
   const [reserveQty, setReserveQty] = useState('1');
+  const [reserveWorkOrderId, setReserveWorkOrderId] = useState('');
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const [form, setForm] = useState({
@@ -82,6 +84,7 @@ export default function SparePartsPage() {
     try {
       await api.post(`/api/spare-parts/${selectedPart.id}/reserve`, {
         quantity: parseInt(reserveQty, 10),
+        work_order_id: reserveWorkOrderId,
       });
       toast.success(`Reserved ${reserveQty} units of ${selectedPart.name}`);
       setShowReserveModal(false);
@@ -116,10 +119,17 @@ export default function SparePartsPage() {
     }
   }
 
-  function openReserve(part: SparePart) {
+  async function openReserve(part: SparePart) {
     setSelectedPart(part);
     setReserveQty('1');
+    setReserveWorkOrderId('');
     setShowReserveModal(true);
+    try {
+      const res = await api.get<any>('/api/work-orders?status=PENDING&status=IN_PROGRESS');
+      setWorkOrders(res?.work_orders ?? []);
+    } catch {
+      setWorkOrders([]);
+    }
   }
 
   if (loading) {
@@ -245,6 +255,22 @@ export default function SparePartsPage() {
                 {selectedPart ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(selectedPart.unit_cost) : '--'}
               </span>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Work Order</label>
+            <select
+              required
+              value={reserveWorkOrderId}
+              onChange={e => setReserveWorkOrderId(e.target.value)}
+              className="w-full px-3 py-2 bg-[#1a1f2e] border border-[#2a3050] rounded-lg text-gray-100 text-sm focus:outline-none focus:border-blue-500"
+            >
+              <option value="">Select a work order...</option>
+              {workOrders.map((wo: any) => (
+                <option key={wo.id} value={wo.id}>
+                  {wo.order_number ?? wo.id.slice(0, 8)} — {wo.service_requests?.title ?? wo.description ?? 'Work Order'}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">Quantity to Reserve</label>

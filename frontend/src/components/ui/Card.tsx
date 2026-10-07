@@ -14,12 +14,12 @@ export interface CardProps {
 }
 
 const glowMap: Record<string, string> = {
-  blue: 'hover:shadow-[0_0_30px_rgba(59,130,246,0.12)] hover:border-[rgba(59,130,246,0.35)]',
-  purple: 'hover:shadow-[0_0_30px_rgba(139,92,246,0.12)] hover:border-[rgba(139,92,246,0.35)]',
-  emerald: 'hover:shadow-[0_0_30px_rgba(16,185,129,0.12)] hover:border-[rgba(16,185,129,0.35)]',
-  amber: 'hover:shadow-[0_0_30px_rgba(245,158,11,0.12)] hover:border-[rgba(245,158,11,0.35)]',
-  red: 'hover:shadow-[0_0_30px_rgba(239,68,68,0.12)] hover:border-[rgba(239,68,68,0.35)]',
-  cyan: 'hover:shadow-[0_0_30px_rgba(6,182,212,0.12)] hover:border-[rgba(6,182,212,0.35)]',
+  blue: 'hover:shadow-[0_4px_40px_-8px_rgba(79,143,247,0.18)] hover:border-[rgba(79,143,247,0.3)]',
+  purple: 'hover:shadow-[0_4px_40px_-8px_rgba(167,139,250,0.18)] hover:border-[rgba(167,139,250,0.3)]',
+  emerald: 'hover:shadow-[0_4px_40px_-8px_rgba(52,211,153,0.18)] hover:border-[rgba(52,211,153,0.3)]',
+  amber: 'hover:shadow-[0_4px_40px_-8px_rgba(251,191,36,0.18)] hover:border-[rgba(251,191,36,0.3)]',
+  red: 'hover:shadow-[0_4px_40px_-8px_rgba(248,113,113,0.18)] hover:border-[rgba(248,113,113,0.3)]',
+  cyan: 'hover:shadow-[0_4px_40px_-8px_rgba(34,211,238,0.18)] hover:border-[rgba(34,211,238,0.3)]',
 };
 
 const paddingMap = {
@@ -43,14 +43,22 @@ export const Card = ({
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
       onClick={onClick}
       className={clsx(
-        'rounded-2xl border border-[rgba(59,130,246,0.15)] bg-gradient-to-br from-[rgba(26,31,46,0.8)] to-[rgba(17,24,39,0.6)] backdrop-blur-xl transition-all duration-300',
+        'rounded-2xl border border-[var(--border-primary)]',
+        'bg-[var(--bg-card)] backdrop-blur-2xl',
+        'transition-all duration-300 relative overflow-hidden',
         paddingMap[padding],
         hoverable && glowMap[glowColor],
         onClick && 'cursor-pointer',
         className,
       )}
     >
-      {children}
+      {/* Noise texture overlay */}
+      <div className="absolute inset-0 rounded-2xl opacity-[0.03] pointer-events-none" style={{
+        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+      }} />
+      {/* Top highlight line */}
+      <div className="absolute top-0 left-[10%] right-[10%] h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
+      <div className="relative z-[1]">{children}</div>
     </motion.div>
   );
 };

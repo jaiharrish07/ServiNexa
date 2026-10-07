@@ -8,8 +8,10 @@ interface MatchFactors {
 
 interface RankedTechnician {
   technician_id: string;
+  name: string;
+  specializations: string[];
   score: number;
-  match_score: number; // alias of score (new-spec key)
+  match_score: number;
   reasoning: string;
   factors: MatchFactors;
 }
@@ -79,6 +81,8 @@ export function matchStub(
 
       return {
         technician_id: tech.id,
+        name: tech.users?.full_name ?? tech.employee_code ?? 'Technician',
+        specializations: tech.specializations ?? [],
         score: finalScore,
         match_score: finalScore,
         reasoning: reasons.join('; '),

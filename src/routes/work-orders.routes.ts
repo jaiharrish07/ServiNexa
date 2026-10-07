@@ -10,6 +10,7 @@ import { idParam } from '../schemas/common';
 import { workOrderCreateSchema, workOrderUpdateSchema } from '../schemas/work-orders';
 import { resolveTechnicianId } from '../utils/technician';
 import { getAccessibleServiceRequest, isOperations } from '../utils/access';
+import { transitionStatus } from '../services/workflow';
 
 const router = Router();
 
@@ -117,10 +118,32 @@ router.patch(
     } else if (!isOperations(req.user!)) {
       return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
     }
-    const workOrder = unwrap(
+    const workOrder = unwrap<any>(
       await update.select().single(),
       { notFoundMessage: 'Work order not found' },
     );
+
+    // Cascade: when all work orders for a service request are COMPLETED,
+    // auto-transition the parent service request to COMPLETED.
+    if (req.body.status === 'COMPLETED' && workOrder.service_request_id) {
+      const { data: siblings } = await supabase
+        .from('work_orders')
+        .select('id, status')
+        .eq('service_request_id', workOrder.service_request_id);
+      const allDone = (siblings ?? []).every((wo: any) => wo.status === 'COMPLETED');
+      if (allDone) {
+        await transitionStatus(
+          workOrder.service_request_id,
+          'COMPLETED',
+          req.user!.id,
+          req.user!.role,
+          { resolution_notes: workOrder.notes ?? 'Completed via work order' },
+        ).catch((err: any) => {
+          console.error('[work-orders] cascade to COMPLETED failed (non-fatal):', err?.message || err);
+        });
+      }
+    }
+
     res.json(wrap('work_order', workOrder));
   }),
 );

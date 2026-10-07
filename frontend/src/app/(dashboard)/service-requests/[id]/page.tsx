@@ -22,6 +22,12 @@ import {
   History,
   Shield,
   UserCheck,
+  Upload,
+  Download,
+  Trash2,
+  Image,
+  File,
+  ClipboardList,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -101,7 +107,32 @@ const EXCEPTION_TYPES = [
 
 const SEVERITY_OPTIONS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
-type TabKey = 'overview' | 'workorders' | 'bidding' | 'ai' | 'audit';
+interface Document {
+  id: string;
+  name: string;
+  file_url: string;
+  file_type: string;
+  file_size: number;
+  created_at: string;
+  uploader?: { full_name: string };
+}
+
+interface CompletionReport {
+  generated_at: string;
+  service_request: any;
+  machine: any;
+  site: any;
+  requester: any;
+  technician: any;
+  work_summary: any;
+  parts_used: any;
+  bidding_summary: any;
+  timeline: any[];
+  photos: any[];
+  ai_classification: any;
+}
+
+type TabKey = 'overview' | 'workorders' | 'bidding' | 'ai' | 'audit' | 'documents' | 'report';
 
 // ---------------------------------------------------------------------------
 // Main Page
@@ -128,6 +159,10 @@ export default function ServiceRequestDetailPage() {
   // Modals
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedTechId, setSelectedTechId] = useState('');
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [completionReport, setCompletionReport] = useState<CompletionReport | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
   const [showExceptionModal, setShowExceptionModal] = useState(false);
   const [exceptionForm, setExceptionForm] = useState({
     type: 'OTHER',
@@ -138,14 +173,8 @@ export default function ServiceRequestDetailPage() {
   // ---- Fetch service request ----
   const fetchRequest = useCallback(async () => {
     try {
-      const res = await api.get<{ service_requests: ServiceRequest[] } | ServiceRequest>(`/api/service-requests/${id}`);
-      // Handle both wrapped array and direct object responses
-      if (res && 'service_requests' in res) {
-        const list = (res as { service_requests: ServiceRequest[] }).service_requests ?? [];
-        setRequest(list[0] ?? null);
-      } else {
-        setRequest((res as ServiceRequest) ?? null);
-      }
+      const res = await api.get<{ service_request: ServiceRequest }>(`/api/service-requests/${id}`);
+      setRequest(res?.service_request ?? null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load service request';
       toast.error(msg);
@@ -183,6 +212,16 @@ export default function ServiceRequestDetailPage() {
           case 'audit': {
             const aRes = await api.get<{ audit_logs?: AuditLog[] }>(`/api/audit?entity_type=service_request&entity_id=${id}`);
             setAuditLogs(aRes?.audit_logs ?? []);
+            break;
+          }
+          case 'documents': {
+            const dRes = await api.get<{ documents?: Document[] }>(`/api/documents/${id}`);
+            setDocuments(dRes?.documents ?? []);
+            break;
+          }
+          case 'report': {
+            const rRes = await api.get<{ report?: CompletionReport }>(`/api/reports/completion/${id}`);
+            setCompletionReport(rRes?.report ?? null);
             break;
           }
         }
@@ -251,6 +290,54 @@ export default function ServiceRequestDetailPage() {
     setExceptionForm({ type: 'OTHER', description: '', severity: 'MEDIUM' });
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('service_request_id', id);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}/api/documents/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: formData,
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+      toast.success('File uploaded');
+      const dRes = await api.get<{ documents?: Document[] }>(`/api/documents/${id}`);
+      setDocuments(dRes?.documents ?? []);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteDoc = async (docId: string) => {
+    try {
+      await api.delete(`/api/documents/${docId}`);
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      toast.success('Document deleted');
+    } catch {
+      toast.error('Failed to delete');
+    }
+  };
+
+  const generateReport = async () => {
+    setGeneratingReport(true);
+    try {
+      const rRes = await api.get<{ report?: CompletionReport }>(`/api/reports/completion/${id}`);
+      setCompletionReport(rRes?.report ?? null);
+      toast.success('Report generated');
+    } catch {
+      toast.error('Failed to generate report');
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
   // ---- Valid transitions for current state ----
   const validTransitions = useMemo(() => {
     if (!request) return [];
@@ -304,8 +391,10 @@ export default function ServiceRequestDetailPage() {
     { key: 'overview', label: 'Overview', icon: FileText },
     { key: 'workorders', label: 'Work Orders', icon: Cpu },
     { key: 'bidding', label: 'Bidding', icon: Gavel },
+    { key: 'documents', label: 'Documents', icon: File },
     { key: 'ai', label: 'AI Analysis', icon: Brain },
     { key: 'audit', label: 'Audit Trail', icon: History },
+    { key: 'report', label: 'Report', icon: ClipboardList },
   ];
 
   // Get the index of the current status in the workflow
@@ -328,11 +417,11 @@ export default function ServiceRequestDetailPage() {
           <div>
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-2xl font-bold text-[var(--text-primary)]">{request.request_number}</h1>
-              <Badge variant={statusBadgeVariant(request.status)}>
-                {request.status.replace(/_/g, ' ')}
+              <Badge variant={statusBadgeVariant(request.status ?? '')}>
+                {(request.status ?? '').replace(/_/g, ' ')}
               </Badge>
-              <Badge variant={priorityBadgeVariant(request.priority)}>
-                {request.priority}
+              <Badge variant={priorityBadgeVariant(request.priority ?? '')}>
+                {request.priority ?? ''}
               </Badge>
             </div>
             <p className="text-lg text-[var(--text-secondary)]">{request.title}</p>
@@ -366,10 +455,10 @@ export default function ServiceRequestDetailPage() {
             <div>
               <p className="text-xs text-[var(--text-muted)]">Machine</p>
               <p className="text-sm font-medium text-[var(--text-primary)]">
-                {request.machine_id ? request.machine_id.slice(0, 8) + '...' : 'N/A'}
+                {request.machines?.name ?? request.machines?.code ?? 'N/A'}
               </p>
               <p className="text-xs text-[var(--text-secondary)]">
-                {request.machine_id ? 'Assigned' : '-'}
+                {request.machines?.type ?? '-'}
               </p>
             </div>
           </div>
@@ -382,7 +471,7 @@ export default function ServiceRequestDetailPage() {
             </div>
             <div>
               <p className="text-xs text-[var(--text-muted)]">Site</p>
-              <p className="text-sm font-medium text-[var(--text-primary)]">{request.site_id}</p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">{request.sites?.name ?? request.sites?.code ?? 'N/A'}</p>
             </div>
           </div>
         </Card>
@@ -394,7 +483,7 @@ export default function ServiceRequestDetailPage() {
             </div>
             <div>
               <p className="text-xs text-[var(--text-muted)]">Requester</p>
-              <p className="text-sm font-medium text-[var(--text-primary)]">{request.requester_id ? request.requester_id.slice(0, 12) + '...' : 'N/A'}</p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">{request.requester?.full_name ?? 'N/A'}</p>
             </div>
           </div>
         </Card>
@@ -407,7 +496,7 @@ export default function ServiceRequestDetailPage() {
             <div>
               <p className="text-xs text-[var(--text-muted)]">Created</p>
               <p className="text-sm font-medium text-[var(--text-primary)]">
-                {format(new Date(request.created_at), 'dd MMM yyyy')}
+                {request.created_at ? format(new Date(request.created_at), 'dd MMM yyyy') : '-'}
               </p>
             </div>
           </div>
@@ -616,8 +705,8 @@ export default function ServiceRequestDetailPage() {
                             <UserCheck className="w-5 h-5 text-[var(--accent-purple)]" />
                           </div>
                           <div>
-                            <p className="text-[var(--text-primary)] font-medium font-mono text-sm">
-                              {request.assigned_technician_id}
+                            <p className="text-[var(--text-primary)] font-medium text-sm">
+                              {request.technician?.users?.full_name ?? request.technician?.employee_code ?? request.assigned_technician_id}
                             </p>
                           </div>
                         </div>
@@ -708,7 +797,7 @@ export default function ServiceRequestDetailPage() {
                               )}
                             </div>
                             <p className="text-[10px] text-[var(--text-muted)] mt-3">
-                              Submitted {format(new Date(bid.submitted_at), 'dd MMM yyyy HH:mm')}
+                              Submitted {bid.submitted_at ? format(new Date(bid.submitted_at), 'dd MMM yyyy HH:mm') : '-'}
                             </p>
                           </Card>
                         ))}
@@ -758,6 +847,218 @@ export default function ServiceRequestDetailPage() {
                   </div>
                 )}
 
+                {/* ---- DOCUMENTS ---- */}
+                {activeTab === 'documents' && (
+                  <div className="space-y-4">
+                    <Card className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-sm font-medium text-[var(--text-muted)]">
+                          Attachments & Photos ({documents.length})
+                        </h4>
+                        <label className="cursor-pointer">
+                          <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading} />
+                          <span className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-[var(--accent-blue)] text-white hover:opacity-90 transition">
+                            {uploading ? <LoadingSpinner /> : <Upload className="w-4 h-4" />}
+                            {uploading ? 'Uploading...' : 'Upload File'}
+                          </span>
+                        </label>
+                      </div>
+                      {documents.length === 0 ? (
+                        <div className="text-center py-8">
+                          <File className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-2 opacity-40" />
+                          <p className="text-[var(--text-muted)] text-sm">No documents uploaded yet</p>
+                          <p className="text-xs text-[var(--text-muted)] mt-1">Upload photos, reports, or documents</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {documents.map((doc) => (
+                            <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] transition">
+                              <div className="p-2 rounded-lg bg-blue-500/10">
+                                {doc.file_type?.startsWith('image/') ? (
+                                  <Image className="w-5 h-5 text-blue-400" />
+                                ) : (
+                                  <FileText className="w-5 h-5 text-blue-400" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-[var(--text-primary)] truncate">{doc.name}</p>
+                                <p className="text-xs text-[var(--text-muted)]">
+                                  {doc.uploader?.full_name ?? 'Unknown'} · {doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : ''} · {doc.created_at ? format(new Date(doc.created_at), 'dd MMM yyyy HH:mm') : ''}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-white/[0.06] transition" title="Download">
+                                  <Download className="w-4 h-4 text-[var(--text-muted)]" />
+                                </a>
+                                <button onClick={() => handleDeleteDoc(doc.id)} className="p-1.5 rounded hover:bg-red-500/10 transition" title="Delete">
+                                  <Trash2 className="w-4 h-4 text-red-400" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+                    {documents.some((d) => d.file_type?.startsWith('image/')) && (
+                      <Card className="p-6">
+                        <h4 className="text-sm font-medium text-[var(--text-muted)] mb-3">Photo Gallery</h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {documents.filter((d) => d.file_type?.startsWith('image/')).map((doc) => (
+                            <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="group relative aspect-square rounded-lg overflow-hidden border border-white/[0.06] hover:border-blue-500/30 transition">
+                              <img src={doc.file_url} alt={doc.name} className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-end p-2">
+                                <span className="text-xs text-white truncate">{doc.name}</span>
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                )}
+
+                {/* ---- COMPLETION REPORT ---- */}
+                {activeTab === 'report' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-medium text-[var(--text-muted)]">Completion Report</h4>
+                      <Button onClick={generateReport} loading={generatingReport} size="sm">
+                        <ClipboardList className="w-4 h-4 mr-1" /> {completionReport ? 'Refresh Report' : 'Generate Report'}
+                      </Button>
+                    </div>
+                    {!completionReport ? (
+                      <Card className="p-10 text-center">
+                        <ClipboardList className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-2 opacity-40" />
+                        <p className="text-[var(--text-muted)] text-sm">Click &quot;Generate Report&quot; to create a completion report</p>
+                      </Card>
+                    ) : (
+                      <>
+                        <Card className="p-6">
+                          <div className="flex items-center justify-between mb-4 pb-3 border-b border-[var(--border-primary)]">
+                            <div>
+                              <h3 className="text-lg font-bold text-[var(--text-primary)]">Service Completion Report</h3>
+                              <p className="text-xs text-[var(--text-muted)]">Generated {completionReport.generated_at ? format(new Date(completionReport.generated_at), 'dd MMM yyyy HH:mm') : ''}</p>
+                            </div>
+                            <Badge variant={completionReport.service_request.sla_status === 'MET' ? 'success' : completionReport.service_request.sla_status === 'BREACHED' ? 'danger' : 'default'}>
+                              SLA: {completionReport.service_request.sla_status}
+                            </Badge>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                              <p className="text-xs text-[var(--text-muted)]">Request</p>
+                              <p className="text-sm font-semibold text-[var(--text-primary)]">{completionReport.service_request.request_number}</p>
+                              <p className="text-xs text-[var(--text-secondary)]">{completionReport.service_request.title}</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                              <p className="text-xs text-[var(--text-muted)]">Machine</p>
+                              <p className="text-sm font-semibold text-[var(--text-primary)]">{completionReport.machine?.name ?? 'N/A'}</p>
+                              <p className="text-xs text-[var(--text-secondary)]">{completionReport.machine?.type} · {completionReport.machine?.code}</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                              <p className="text-xs text-[var(--text-muted)]">Resolution Time</p>
+                              <p className="text-sm font-semibold text-[var(--accent-blue)]">{completionReport.service_request.resolution_hours}h</p>
+                              <p className="text-xs text-[var(--text-secondary)]">{completionReport.service_request.category} · {completionReport.service_request.priority}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                            <div>
+                              <h5 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">Requester</h5>
+                              <p className="text-sm text-[var(--text-primary)]">{completionReport.requester?.name ?? 'N/A'}</p>
+                              <p className="text-xs text-[var(--text-secondary)]">{completionReport.requester?.email}</p>
+                            </div>
+                            <div>
+                              <h5 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">Technician</h5>
+                              <p className="text-sm text-[var(--text-primary)]">{completionReport.technician?.name ?? 'N/A'}</p>
+                              <p className="text-xs text-[var(--text-secondary)]">{completionReport.technician?.employee_code}</p>
+                            </div>
+                          </div>
+                        </Card>
+
+                        <Card className="p-6">
+                          <h5 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Work Summary</h5>
+                          <div className="grid grid-cols-3 gap-4 mb-4">
+                            <div className="text-center p-3 rounded-lg bg-blue-500/5">
+                              <p className="text-2xl font-bold text-[var(--accent-blue)]">{completionReport.work_summary.total_work_orders}</p>
+                              <p className="text-xs text-[var(--text-muted)]">Work Orders</p>
+                            </div>
+                            <div className="text-center p-3 rounded-lg bg-emerald-500/5">
+                              <p className="text-2xl font-bold text-[var(--accent-emerald)]">{completionReport.work_summary.completed_work_orders}</p>
+                              <p className="text-xs text-[var(--text-muted)]">Completed</p>
+                            </div>
+                            <div className="text-center p-3 rounded-lg bg-amber-500/5">
+                              <p className="text-2xl font-bold text-[var(--accent-amber)]">{completionReport.work_summary.total_hours}h</p>
+                              <p className="text-xs text-[var(--text-muted)]">Total Hours</p>
+                            </div>
+                          </div>
+                        </Card>
+
+                        {completionReport.parts_used.total_items > 0 && (
+                          <Card className="p-6">
+                            <h5 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Parts Used</h5>
+                            <div className="space-y-2">
+                              {completionReport.parts_used.items.map((item: any, i: number) => (
+                                <div key={i} className="flex items-center justify-between text-sm p-2 rounded bg-white/[0.02]">
+                                  <div>
+                                    <span className="text-[var(--text-primary)]">{item.part_name}</span>
+                                    <span className="text-xs text-[var(--text-muted)] ml-2">{item.part_number}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[var(--text-secondary)]">x{item.quantity}</span>
+                                    <Badge variant={item.status === 'ISSUED' ? 'success' : 'default'}>{item.status}</Badge>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </Card>
+                        )}
+
+                        {completionReport.timeline.length > 0 && (
+                          <Card className="p-6">
+                            <h5 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Resolution Timeline</h5>
+                            <div className="relative pl-6">
+                              <div className="absolute left-2 top-0 bottom-0 w-px bg-[var(--border-primary)]" />
+                              {completionReport.timeline.map((step: any, i: number) => (
+                                <div key={i} className="relative mb-3 last:mb-0">
+                                  <div className="absolute -left-4 top-1.5 w-2 h-2 rounded-full bg-[var(--accent-blue)]" />
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <p className="text-xs font-medium text-[var(--text-primary)]">{(step.action ?? '').replace(/_/g, ' ')}</p>
+                                      {step.from_status && (
+                                        <p className="text-[10px] text-[var(--text-muted)]">{step.from_status} → {step.to_status}</p>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-[var(--text-muted)]">
+                                      {step.at ? format(new Date(step.at), 'dd MMM HH:mm') : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </Card>
+                        )}
+
+                        {completionReport.photos.length > 0 && (
+                          <Card className="p-6">
+                            <h5 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Machine Photos</h5>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {completionReport.photos.map((photo: any, i: number) => (
+                                <a key={i} href={photo.url} target="_blank" rel="noopener noreferrer" className="group relative aspect-video rounded-lg overflow-hidden border border-white/[0.06]">
+                                  <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-end p-2">
+                                    <span className="text-xs text-white truncate">{photo.name}</span>
+                                  </div>
+                                </a>
+                              ))}
+                            </div>
+                          </Card>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* ---- AUDIT TRAIL ---- */}
                 {activeTab === 'audit' && (
                   <div>
@@ -778,7 +1079,7 @@ export default function ServiceRequestDetailPage() {
                                 <div className="flex items-start justify-between">
                                   <div>
                                     <p className="text-sm font-medium text-[var(--text-primary)]">
-                                      {log.action.replace(/_/g, ' ')}
+                                      {(log.action ?? '').replace(/_/g, ' ')}
                                     </p>
                                     {log.field_changed && (
                                       <p className="text-xs text-[var(--text-secondary)] mt-1">
@@ -789,7 +1090,7 @@ export default function ServiceRequestDetailPage() {
                                     )}
                                   </div>
                                   <span className="text-[10px] text-[var(--text-muted)] whitespace-nowrap">
-                                    {format(new Date(log.created_at), 'dd MMM yyyy HH:mm')}
+                                    {log.created_at ? format(new Date(log.created_at), 'dd MMM yyyy HH:mm') : '-'}
                                   </span>
                                 </div>
                                 <p className="text-xs text-[var(--text-muted)] mt-2">

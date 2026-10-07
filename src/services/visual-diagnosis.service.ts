@@ -26,7 +26,28 @@ export async function createVisualDiagnosis(sr: any) {
       }
     : {};
 
-  const payload = { machine_type, sub_category, sensor_data, machine_history: [] };
+  // Pull real machine history from past service requests
+  const { data: history } = await supabase
+    .from('service_requests')
+    .select('category, ai_sub_category, priority, status, created_at, resolution_notes')
+    .eq('machine_id', sr.machine_id)
+    .neq('id', sr.id)
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  const payload = {
+    machine_type,
+    sub_category,
+    sensor_data,
+    machine_history: (history ?? []).map((h: any) => ({
+      category: h.category,
+      sub_category: h.ai_sub_category,
+      priority: h.priority,
+      status: h.status,
+      date: h.created_at,
+      resolution: h.resolution_notes,
+    })),
+  };
   const ai = await callAIService<any>('/ai/analyze-diagnosis', payload);
   const analysis = ai.data
     ? { ...ai.data, source: 'ai' as const }

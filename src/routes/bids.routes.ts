@@ -97,6 +97,22 @@ router.post(
   })
 );
 
+// GET /api/bids/my — technician's own active bids across all requests.
+router.get(
+  '/bids/my',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const techId = await resolveTechnicianId(req.user!.id);
+    if (!techId) return ok(res, { bids: [] });
+    const { data } = await supabase
+      .from('solution_bids')
+      .select('*, technicians(employee_code, users(full_name)), service_requests:service_request_id(request_number, title, status)')
+      .eq('technician_id', techId)
+      .order('submitted_at', { ascending: false });
+    ok(res, { bids: data ?? [] });
+  })
+);
+
 // GET /api/bids/:requestId  — BLIND: technicians see only their own bid; ops/admin see all.
 router.get(
   '/bids/:requestId',

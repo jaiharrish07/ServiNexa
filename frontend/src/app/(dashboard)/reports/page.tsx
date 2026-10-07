@@ -198,7 +198,7 @@ export default function ReportsPage() {
               (byStatus['VERIFIED'] ?? 0),
             avg_resolution_hours: 0,
             by_status: byStatus,
-            by_priority: {},
+            by_priority: sr?.by_priority ?? {},
           });
         }
 

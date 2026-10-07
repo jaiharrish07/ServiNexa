@@ -74,6 +74,13 @@ router.put(
     const patch: Record<string, any> = { status };
     if (status === 'STAGED' || status === 'ISSUED') patch.actual_arrival = new Date().toISOString();
 
+    // Fetch full staging record for inventory sync
+    const { data: fullRecord } = await supabase
+      .from('parts_staging')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
     const { data, error } = await supabase
       .from('parts_staging')
       .update(patch)
@@ -83,6 +90,51 @@ router.put(
       .single();
     if (error) throw badRequest(error.message);
     if (!data) throw notFound('Staging record not found');
+
+    // Inventory sync: reserve parts when staging advances to RESERVED
+    if (status === 'RESERVED' && fullRecord?.part_number) {
+      const { data: sr } = await supabase
+        .from('service_requests')
+        .select('machine_id, machines(site_id)')
+        .eq('id', existing.service_request_id)
+        .single();
+      const siteId = (sr as any)?.machines?.site_id;
+      if (siteId) {
+        const { data: part } = await supabase
+          .from('spare_parts')
+          .select('id')
+          .eq('part_number', fullRecord.part_number)
+          .eq('site_id', siteId)
+          .maybeSingle();
+        if (part && fullRecord.work_order_id) {
+          const { error: resErr } = await supabase.rpc('reserve_spare_part', {
+            p_spare_part_id: part.id,
+            p_quantity: fullRecord.quantity ?? 1,
+            p_work_order_id: fullRecord.work_order_id,
+          });
+          if (resErr) console.error('[staging] reservation failed (non-fatal):', resErr.message);
+        }
+      }
+    }
+
+    // Inventory sync: deduct quantity_available when parts are ISSUED (consumed)
+    if (status === 'ISSUED' && fullRecord?.part_number) {
+      const { data: sr } = await supabase
+        .from('service_requests')
+        .select('machine_id, machines(site_id)')
+        .eq('id', existing.service_request_id)
+        .single();
+      const siteId = (sr as any)?.machines?.site_id;
+      if (siteId) {
+        const qty = fullRecord.quantity ?? 1;
+        const { error: dedErr } = await supabase.rpc('deduct_spare_part', {
+          p_part_number: fullRecord.part_number,
+          p_site_id: siteId,
+          p_quantity: qty,
+        });
+        if (dedErr) console.error('[staging] inventory deduction failed (non-fatal):', dedErr.message);
+      }
+    }
 
     await createAuditLog({
       entity_type: 'parts_staging',

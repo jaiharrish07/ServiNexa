@@ -92,6 +92,38 @@ async function seed() {
     .select();
   console.log(`   ✓ Machines: ${machines?.length ?? 0}`);
 
+  // 3b. Machine model components (3D diagnosis catalog)
+  const componentCatalog = [
+    // CNC Mill components
+    { machine_type: 'CNC Mill', component_id: 'spindle', component_name: 'Main Spindle', coord_x: 0, coord_y: 0.6, coord_z: 0, highlight_color: '#ef4444' },
+    { machine_type: 'CNC Mill', component_id: 'motor', component_name: 'Drive Motor', coord_x: -0.9, coord_y: 0, coord_z: 0, highlight_color: '#ef4444' },
+    { machine_type: 'CNC Mill', component_id: 'gearbox', component_name: 'Gearbox Assembly', coord_x: -0.4, coord_y: 0, coord_z: 0, highlight_color: '#f97316' },
+    { machine_type: 'CNC Mill', component_id: 'bearing', component_name: 'Main Bearing', coord_x: 0, coord_y: 0.3, coord_z: 0.5, highlight_color: '#ef4444' },
+    { machine_type: 'CNC Mill', component_id: 'coolant_system', component_name: 'Coolant System', coord_x: 0.8, coord_y: -0.3, coord_z: 0.5, highlight_color: '#3b82f6' },
+    { machine_type: 'CNC Mill', component_id: 'control_board', component_name: 'CNC Control Board', coord_x: 0.9, coord_y: 0.5, coord_z: -0.5, highlight_color: '#8b5cf6' },
+    { machine_type: 'CNC Mill', component_id: 'sensor_array', component_name: 'Sensor Array', coord_x: 0.4, coord_y: 0.8, coord_z: 0.3, highlight_color: '#06b6d4' },
+    { machine_type: 'CNC Mill', component_id: 'belt', component_name: 'Drive Belt', coord_x: -0.6, coord_y: 0.3, coord_z: 0.4, highlight_color: '#f59e0b' },
+    // Press components
+    { machine_type: 'Press', component_id: 'hydraulic_pump', component_name: 'Hydraulic Pump', coord_x: -0.7, coord_y: -0.3, coord_z: 0, highlight_color: '#ef4444' },
+    { machine_type: 'Press', component_id: 'hydraulic_cylinder', component_name: 'Hydraulic Cylinder', coord_x: 0, coord_y: 0.5, coord_z: 0, highlight_color: '#ef4444' },
+    { machine_type: 'Press', component_id: 'motor', component_name: 'Electric Motor', coord_x: -0.9, coord_y: 0, coord_z: 0, highlight_color: '#f97316' },
+    { machine_type: 'Press', component_id: 'control_board', component_name: 'PLC Controller', coord_x: 0.9, coord_y: 0.4, coord_z: -0.5, highlight_color: '#8b5cf6' },
+    { machine_type: 'Press', component_id: 'sensor_array', component_name: 'Pressure Sensors', coord_x: 0.3, coord_y: 0.7, coord_z: 0.3, highlight_color: '#06b6d4' },
+    { machine_type: 'Press', component_id: 'bearing', component_name: 'Guide Bearing', coord_x: 0.4, coord_y: 0, coord_z: 0.5, highlight_color: '#ef4444' },
+    // Welding Robot components
+    { machine_type: 'Welding Robot', component_id: 'motor', component_name: 'Servo Motor', coord_x: 0, coord_y: 0.5, coord_z: 0, highlight_color: '#ef4444' },
+    { machine_type: 'Welding Robot', component_id: 'gearbox', component_name: 'Joint Gearbox', coord_x: 0.3, coord_y: 0.3, coord_z: 0.3, highlight_color: '#f97316' },
+    { machine_type: 'Welding Robot', component_id: 'wiring_harness', component_name: 'Wiring Harness', coord_x: -0.5, coord_y: 0.2, coord_z: 0.3, highlight_color: '#f59e0b' },
+    { machine_type: 'Welding Robot', component_id: 'control_board', component_name: 'Robot Controller', coord_x: -0.8, coord_y: -0.2, coord_z: -0.5, highlight_color: '#8b5cf6' },
+    { machine_type: 'Welding Robot', component_id: 'sensor_array', component_name: 'Torch Sensors', coord_x: 0.6, coord_y: 0.6, coord_z: 0, highlight_color: '#06b6d4' },
+    { machine_type: 'Welding Robot', component_id: 'bearing', component_name: 'Axis Bearing', coord_x: 0, coord_y: 0, coord_z: 0.5, highlight_color: '#ef4444' },
+  ];
+  const { data: components } = await supabase
+    .from('machine_model_components')
+    .upsert(componentCatalog, { onConflict: 'machine_type,component_id' })
+    .select();
+  console.log(`   ✓ Machine model components: ${components?.length ?? 0}`);
+
   // 4. Technicians (linked to the 3 technician users)
   const alex = profiles.find((p) => p.full_name === 'Alex Chen');
   const maria = profiles.find((p) => p.full_name === 'Maria Santos');
@@ -128,6 +160,70 @@ async function seed() {
     )
     .select();
   console.log(`   ✓ Spare parts: ${parts?.length ?? 0}`);
+
+  // 6. Service Requests across various statuses (requires machines + profiles)
+  const cncMill = machines?.find((m: any) => m.code === 'M-104');
+  const press = machines?.find((m: any) => m.code === 'M-200');
+  const weldBot = machines?.find((m: any) => m.code === 'M-300');
+  const customer = profiles.find((p) => p.full_name === 'David Customer');
+  const ops = profiles.find((p) => p.full_name === 'Mike Operations');
+  const alexTech = profiles.find((p) => p.full_name === 'Alex Chen');
+
+  if (customer && ops && cncMill && press && weldBot) {
+    const { data: techs } = await supabase.from('technicians').select('id, user_id').limit(3);
+    const alexT = techs?.find((t: any) => t.user_id === alexTech?.id);
+
+    const srRows = [
+      { request_number: 'SR-2024-001', title: 'CNC spindle vibration detected', description: 'Abnormal vibration at 1480 RPM causing surface finish defects on batch P-2024', machine_id: cncMill.id, requester_id: customer.id, category: 'MECHANICAL', priority: 'HIGH', status: 'IN_PROGRESS', assigned_technician_id: alexT?.id ?? null, assigned_at: new Date(Date.now() - 2 * 86400000).toISOString(), started_at: new Date(Date.now() - 86400000).toISOString(), sla_deadline: new Date(Date.now() + 6 * 3600000).toISOString() },
+      { request_number: 'SR-2024-002', title: 'Hydraulic press pressure drop', description: 'Gradual pressure loss observed, cycle time increasing by 15%', machine_id: press.id, requester_id: customer.id, category: 'HYDRAULIC', priority: 'MEDIUM', status: 'SUBMITTED', sla_deadline: new Date(Date.now() + 20 * 3600000).toISOString() },
+      { request_number: 'SR-2024-003', title: 'Welding robot arc instability', description: 'Intermittent arc breaks during MIG welding cycle, weld bead irregular', machine_id: weldBot.id, requester_id: customer.id, category: 'ELECTRICAL', priority: 'CRITICAL', status: 'APPROVED', approved_by: ops.id, approved_at: new Date(Date.now() - 3600000).toISOString(), sla_deadline: new Date(Date.now() + 2 * 3600000).toISOString() },
+      { request_number: 'SR-2024-004', title: 'CNC coolant system maintenance', description: 'Scheduled preventive maintenance for coolant filtration system', machine_id: cncMill.id, requester_id: customer.id, category: 'PREVENTIVE', priority: 'LOW', status: 'CLOSED', assigned_technician_id: alexT?.id ?? null, completed_at: new Date(Date.now() - 5 * 86400000).toISOString(), verified_at: new Date(Date.now() - 4 * 86400000).toISOString(), closed_at: new Date(Date.now() - 3 * 86400000).toISOString(), resolution_notes: 'Replaced coolant filter cartridge, flushed and refilled 40L of cutting fluid. System pressure restored to nominal.' },
+      { request_number: 'SR-2024-005', title: 'Press safety sensor calibration', description: 'Light curtain sensors triggering false positives, causing unplanned stops', machine_id: press.id, requester_id: customer.id, category: 'CALIBRATION', priority: 'HIGH', status: 'COMPLETED', assigned_technician_id: alexT?.id ?? null, completed_at: new Date(Date.now() - 86400000).toISOString(), resolution_notes: 'Recalibrated light curtain alignment, cleaned optical sensors, updated safety controller firmware to v3.2.1.' },
+    ];
+    const { data: srs } = await supabase
+      .from('service_requests')
+      .upsert(srRows, { onConflict: 'request_number' })
+      .select();
+    console.log(`   ✓ Service requests: ${srs?.length ?? 0}`);
+
+    // 7. Machine dependencies (for cascading impact analysis)
+    const depRows = [
+      { machine_id: press.id, depends_on_machine_id: cncMill.id, dependency_type: 'DIRECT', impact_weight: 0.85, throughput_rate: 120, unit_value: 450, buffer_hours: 4, production_line: 'Line A' },
+      { machine_id: weldBot.id, depends_on_machine_id: press.id, dependency_type: 'DIRECT', impact_weight: 0.70, throughput_rate: 80, unit_value: 1200, buffer_hours: 2, production_line: 'Line A' },
+    ];
+    const { data: deps } = await supabase
+      .from('machine_dependencies')
+      .upsert(depRows, { onConflict: 'machine_id,depends_on_machine_id' })
+      .select();
+    console.log(`   ✓ Machine dependencies: ${deps?.length ?? 0}`);
+
+    // 8. Production orders (open orders at risk from downtime)
+    const prodRows = [
+      { order_code: 'PO-2024-A1', machine_id: cncMill.id, quantity: 500, unit_value: 450, deadline: new Date(Date.now() + 3 * 86400000).toISOString(), sla_penalty: 25000, status: 'IN_PROGRESS' },
+      { order_code: 'PO-2024-A2', machine_id: press.id, quantity: 200, unit_value: 1200, deadline: new Date(Date.now() + 5 * 86400000).toISOString(), sla_penalty: 50000, status: 'OPEN' },
+      { order_code: 'PO-2024-B1', machine_id: weldBot.id, quantity: 100, unit_value: 3500, deadline: new Date(Date.now() + 7 * 86400000).toISOString(), sla_penalty: 75000, status: 'OPEN' },
+    ];
+    const { data: prods } = await supabase
+      .from('production_orders')
+      .upsert(prodRows, { onConflict: 'order_code' })
+      .select();
+    console.log(`   ✓ Production orders: ${prods?.length ?? 0}`);
+
+    // 9. Knowledge base entries (from past resolved cases)
+    const kbRows = [
+      { machine_type: 'CNC Mill', category: 'MECHANICAL', sub_category: 'bearing_wear', problem_description: 'Excessive vibration at high RPM caused by worn main spindle bearings', solution_applied: 'Replaced main spindle bearings (SKF 7210 BECBP) and realigned spindle assembly. Applied precision torque spec 45Nm.', parts_used: [{ part_number: 'MB-300', quantity: 2 }], resolution_hours: 6.5, cost: 850, effectiveness_rating: 5, success_flag: true, tags: ['vibration', 'spindle', 'bearing', 'cnc'] },
+      { machine_type: 'CNC Mill', category: 'MECHANICAL', sub_category: 'belt_wear', problem_description: 'Drive belt slipping under load causing inconsistent feed rate', solution_applied: 'Replaced drive belt and adjusted tensioner. Checked motor alignment with laser tool.', parts_used: [{ part_number: 'CT-200', quantity: 1 }], resolution_hours: 2.0, cost: 180, effectiveness_rating: 4, success_flag: true, tags: ['belt', 'drive', 'feed-rate'] },
+      { machine_type: 'Press', category: 'HYDRAULIC', sub_category: 'seal_failure', problem_description: 'Hydraulic cylinder seal degradation causing pressure drop and oil leak', solution_applied: 'Replaced complete seal kit on main cylinder, flushed hydraulic system, refilled with ISO VG 46.', parts_used: [{ part_number: 'HS-100', quantity: 1 }], resolution_hours: 4.0, cost: 520, effectiveness_rating: 5, success_flag: true, tags: ['hydraulic', 'seal', 'pressure', 'leak'] },
+      { machine_type: 'Welding Robot', category: 'ELECTRICAL', sub_category: 'wiring_fault', problem_description: 'Intermittent arc breaks during welding cycle traced to damaged torch cable', solution_applied: 'Replaced torch cable assembly and reterminated connectors. Tested arc stability across full range.', parts_used: [{ part_number: 'WW-400', quantity: 1 }], resolution_hours: 3.5, cost: 620, effectiveness_rating: 4, success_flag: true, tags: ['arc', 'welding', 'cable', 'torch'] },
+    ];
+    const { data: kb } = await supabase
+      .from('knowledge_entries')
+      .upsert(kbRows, { onConflict: 'id' })
+      .select();
+    console.log(`   ✓ Knowledge entries: ${kb?.length ?? 0}`);
+  } else {
+    console.log('   ⚠ Skipped enriched seed data (prerequisite profiles/machines missing)');
+  }
 
   console.log('\n✅ Seed complete.\n\nDemo accounts:');
   console.log('   Admin:      admin@dqbh.com    / Admin123!');

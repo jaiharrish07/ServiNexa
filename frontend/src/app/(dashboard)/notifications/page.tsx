@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BellOff, CheckCheck, Check, MailOpen,
@@ -15,7 +16,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 function typeIcon(type: string) {
-  switch (type.toUpperCase()) {
+  switch ((type ?? '').toUpperCase()) {
     case 'WARNING': return <AlertTriangle className="w-5 h-5 text-amber-400" />;
     case 'ERROR':
     case 'CRITICAL': return <AlertCircle className="w-5 h-5 text-red-400" />;
@@ -35,7 +36,14 @@ const itemVariants = {
   exit: { opacity: 0, x: -20, transition: { duration: 0.2 } },
 };
 
+const ENTITY_ROUTES: Record<string, string> = {
+  service_request: '/service-requests',
+  work_order: '/work-orders',
+  machine: '/machines',
+};
+
 export default function NotificationsPage() {
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -181,7 +189,13 @@ export default function NotificationsPage() {
                     ? 'bg-[#111827] border-[#2a3050] hover:border-[#3a4570]'
                     : 'bg-[#111827] border-blue-500/30 hover:border-blue-500/50'
                 }`}
-                onClick={() => !notification.is_read && markAsRead(notification.id)}
+                onClick={() => {
+                  if (!notification.is_read) markAsRead(notification.id);
+                  const basePath = ENTITY_ROUTES[notification.related_entity_type ?? ''];
+                  if (basePath && notification.related_entity_id) {
+                    router.push(`${basePath}/${notification.related_entity_id}`);
+                  }
+                }}
               >
                 {/* Icon */}
                 <div className="shrink-0 mt-0.5">{typeIcon(notification.type)}</div>

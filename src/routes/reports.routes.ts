@@ -10,6 +10,7 @@ import {
   getUtilizationReport,
   getPartsRebalance,
 } from '../services/reports';
+import { generateCompletionReport } from '../services/completion-report';
 
 const router = Router();
 
@@ -63,6 +64,21 @@ router.get(
   authorize('ADMIN', 'OPS_MANAGER'),
   asyncHandler(async (_req: AuthRequest, res: Response) => {
     res.json({ suggestions: await getPartsRebalance() });
+  }),
+);
+
+// GET /api/reports/completion/:id — full completion report for a service request
+router.get(
+  '/completion/:id',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    try {
+      const result = await generateCompletionReport(req.params.id);
+      res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(404).json({ error: message });
+    }
   }),
 );
 

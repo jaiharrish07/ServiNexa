@@ -118,20 +118,58 @@ export async function scoreBids(
   if (srError || !sr) return { success: false, error: srError?.message ?? 'Service request not found', code: 'NOT_FOUND' };
   if (sr.status !== 'BIDDING') return { success: false, error: `Cannot score bids while request is ${sr.status}`, code: 'INVALID_TRANSITION' };
 
-  const bidPayload = bids.map((b: any) => ({
-    bid_id: b.id,
-    success_rate: b.technicians?.success_rate ?? 0.8,
-    proposed_solution: b.proposed_solution,
-    parts_list: b.parts_list,
-    labor_hours: Number(b.labor_hours ?? 0),
-    total_cost: Number(b.total_cost ?? 0),
-    parts_availability_score: 70,
+  // Look up real parts availability for each bid's parts list
+  const { data: srFull } = await supabase
+    .from('service_requests')
+    .select('machine_id, machines(site_id)')
+    .eq('id', serviceRequestId)
+    .single();
+  const siteId = (srFull as any)?.machines?.site_id;
+
+  const bidPayload = await Promise.all(bids.map(async (b: any) => {
+    let partsScore = 70;
+    const partsList: any[] = b.parts_list ?? [];
+    if (partsList.length > 0 && siteId) {
+      const partNumbers = partsList.map((p: any) => p.part_number).filter(Boolean);
+      if (partNumbers.length) {
+        const { data: inv } = await supabase
+          .from('spare_parts')
+          .select('part_number, quantity_available, quantity_reserved')
+          .eq('site_id', siteId)
+          .in('part_number', partNumbers);
+        const invMap = new Map((inv ?? []).map((i: any) => [i.part_number, i]));
+        let available = 0;
+        for (const p of partsList) {
+          const stock = invMap.get(p.part_number);
+          const free = (stock?.quantity_available ?? 0) - (stock?.quantity_reserved ?? 0);
+          if (free >= (p.quantity ?? 1)) available++;
+        }
+        partsScore = Math.round((available / partsList.length) * 100);
+      }
+    }
+    return {
+      bid_id: b.id,
+      success_rate: b.technicians?.success_rate ?? 0.8,
+      proposed_solution: b.proposed_solution,
+      parts_list: b.parts_list,
+      labor_hours: Number(b.labor_hours ?? 0),
+      total_cost: Number(b.total_cost ?? 0),
+      parts_availability_score: partsScore,
+    };
   }));
+
+  // Pull relevant knowledge entries for the category
+  const { data: knowledgeEntries } = await supabase
+    .from('knowledge_entries')
+    .select('problem_description, solution_applied, parts_used, resolution_hours, effectiveness_rating')
+    .eq('category', sr.category ?? '')
+    .order('effectiveness_rating', { ascending: false })
+    .limit(5);
 
   const ai = await callAIService<any>('/ai/score-bids', {
     category: sr?.category ?? '',
     priority: sr?.priority ?? '',
-    knowledge: null,
+    knowledge: knowledgeEntries ?? [],
     bids: bidPayload,
   });
   const scored = ai.data?.ranked_bids ? ai.data : bidsStub(bidPayload);

@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Wrench,
   ClipboardList,
+  Brain,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -126,7 +127,29 @@ export default function ServiceRequestsPage() {
     machine_id: '',
   });
 
+  const [aiSuggesting, setAiSuggesting] = useState(false);
+
   const canCreate = user && CAN_CREATE_ROLES.includes(user.role);
+
+  const autoClassify = async () => {
+    if (!form.title && !form.description) {
+      toast.error('Enter a title or description first');
+      return;
+    }
+    setAiSuggesting(true);
+    try {
+      const res = await api.post<{ category?: string; priority?: string; confidence?: number; source?: string }>('/api/ai/classify', {
+        description: `${form.title}. ${form.description}`,
+      });
+      if (res?.category) setForm(f => ({ ...f, category: res.category! }));
+      if (res?.priority) setForm(f => ({ ...f, priority: res.priority! }));
+      toast.success(`AI suggested: ${res?.category} / ${res?.priority} (${Math.round((res?.confidence ?? 0) * 100)}% confidence)`);
+    } catch {
+      toast.error('AI classification failed');
+    } finally {
+      setAiSuggesting(false);
+    }
+  };
 
   // ---- Fetch requests ----
   const fetchRequests = useCallback(async () => {
@@ -341,13 +364,13 @@ export default function ServiceRequestsPage() {
                       <Badge variant={priorityBadgeVariant(sr.priority)}>{sr.priority}</Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={statusBadgeVariant(sr.status)}>{sr.status.replace(/_/g, ' ')}</Badge>
+                      <Badge variant={statusBadgeVariant(sr.status ?? '')}>{(sr.status ?? '').replace(/_/g, ' ')}</Badge>
                     </td>
                     <td className="px-4 py-3 text-[var(--text-secondary)]">
-                      {sr.machine_id ? sr.machine_id.slice(0, 8) + '...' : '-'}
+                      {sr.machines?.name ?? sr.machines?.code ?? '-'}
                     </td>
                     <td className="px-4 py-3 text-[var(--text-secondary)]">
-                      {sr.assigned_technician_id ? sr.assigned_technician_id.slice(0, 8) + '...' : '-'}
+                      {sr.technician?.users?.full_name ?? sr.technician?.employee_code ?? '-'}
                     </td>
                     <td className="px-4 py-3 text-[var(--text-muted)]">
                       {sr.created_at ? format(new Date(sr.created_at), 'dd MMM yyyy') : '-'}
@@ -381,11 +404,11 @@ export default function ServiceRequestsPage() {
                 {sr.title}
               </h3>
               <div className="flex items-center gap-2 mb-3">
-                <Badge variant={statusBadgeVariant(sr.status)}>{sr.status.replace(/_/g, ' ')}</Badge>
+                <Badge variant={statusBadgeVariant(sr.status ?? '')}>{(sr.status ?? '').replace(/_/g, ' ')}</Badge>
               </div>
               <div className="text-xs text-[var(--text-muted)] space-y-1">
-                <p>{sr.machine_id ? sr.machine_id.slice(0, 8) + '...' : 'No machine assigned'}</p>
-                <p>{sr.assigned_technician_id ? sr.assigned_technician_id.slice(0, 8) + '...' : 'Unassigned'}</p>
+                <p>{sr.machines?.name ?? 'No machine assigned'}</p>
+                <p>{sr.technician?.users?.full_name ?? sr.technician?.employee_code ?? 'Unassigned'}</p>
                 <p>{sr.created_at ? format(new Date(sr.created_at), 'dd MMM yyyy') : '-'}</p>
               </div>
             </motion.div>
@@ -453,6 +476,17 @@ export default function ServiceRequestsPage() {
                   className={`${inputClasses} resize-none`}
                 />
               </div>
+
+              {/* AI Suggest button */}
+              <button
+                type="button"
+                onClick={autoClassify}
+                disabled={aiSuggesting || (!form.title && !form.description)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-400 text-sm font-medium hover:bg-purple-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Brain className="w-4 h-4" />
+                {aiSuggesting ? 'Classifying...' : 'AI Auto-Classify Category & Priority'}
+              </button>
 
               {/* Category + Priority row */}
               <div className="grid grid-cols-2 gap-4">

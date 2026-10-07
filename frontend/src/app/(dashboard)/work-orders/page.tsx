@@ -186,7 +186,7 @@ export default function WorkOrdersPage() {
                       </Badge>
                     </div>
                     <span className="text-sm text-gray-400 truncate">
-                      {order.technician_id?.slice(0, 8) || '--'}
+                      {order.technicians?.users?.full_name ?? order.technicians?.employee_code ?? '--'}
                     </span>
                     <span className="text-xs text-gray-500">
                       {new Date(order.created_at).toLocaleDateString()}
@@ -213,12 +213,12 @@ export default function WorkOrdersPage() {
                           <div className="flex items-center gap-2">
                             <ClipboardList className="w-4 h-4 text-gray-400" />
                             <span className="text-gray-400">Service Request:</span>
-                            <span className="text-gray-200 font-mono text-xs">{order.service_request_id ? order.service_request_id.slice(0, 12) + '...' : '--'}</span>
+                            <span className="text-gray-200 text-xs">{order.service_requests?.request_number ?? '--'}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <User className="w-4 h-4 text-gray-400" />
                             <span className="text-gray-400">Assigned To:</span>
-                            <span className="text-gray-200 font-mono text-xs">{order.technician_id ? order.technician_id.slice(0, 12) + '...' : '--'}</span>
+                            <span className="text-gray-200 text-xs">{order.technicians?.users?.full_name ?? order.technicians?.employee_code ?? '--'}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-gray-400" />

@@ -73,7 +73,10 @@ export interface ServiceRequest {
   cascading_impact_score?: number;
   impact_inr?: number;
   selected_bid_id?: string;
-  machines?: { code: string; name: string };
+  machines?: { code: string; name: string; type?: string; status?: string };
+  sites?: { name: string; code: string };
+  requester?: { full_name: string; email?: string };
+  approver?: { full_name: string };
   technician?: { employee_code: string; users?: { full_name: string } };
   created_at: string;
   updated_at: string;
@@ -89,6 +92,7 @@ export interface WorkOrder {
   status: string;
   notes?: string;
   service_requests?: { title?: string; priority?: string; request_number?: string };
+  technicians?: { employee_code: string; users?: { full_name: string } };
   created_at: string;
   updated_at?: string;
 }

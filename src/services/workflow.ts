@@ -243,6 +243,48 @@ export async function transitionStatus(
     console.error('[workflow] notification failed (non-fatal):', err?.message || err);
   }
 
+  // AI Orchestration: auto-run the triage pipeline on submission (fire-and-forget).
+  if (newStatus === 'SUBMITTED') {
+    try {
+      const { runTriagePipeline } = await import('./ai-orchestrator');
+      // Mark pipeline as running
+      await supabase
+        .from('service_requests')
+        .update({ ai_pipeline_status: 'RUNNING' })
+        .eq('id', requestId);
+      // Fire-and-forget: don't await — the pipeline runs in the background
+      runTriagePipeline(requestId).catch((err: any) => {
+        console.error('[workflow] AI pipeline failed (non-fatal):', err?.message || err);
+        supabase
+          .from('service_requests')
+          .update({ ai_pipeline_status: 'FAILED' })
+          .eq('id', requestId)
+          .then(() => {});
+      });
+    } catch (err: any) {
+      console.error('[workflow] AI pipeline launch failed (non-fatal):', err?.message || err);
+    }
+  }
+
+  // Machine status sync: reflect service lifecycle on the machine's status.
+  if (sr.machine_id) {
+    const machineStatusUpdate: Record<string, string> = {};
+    if (newStatus === 'ASSIGNED' || newStatus === 'IN_PROGRESS') {
+      machineStatusUpdate.status = 'MAINTENANCE';
+    } else if (newStatus === 'VERIFIED' || newStatus === 'CLOSED') {
+      machineStatusUpdate.status = 'OPERATIONAL';
+    } else if (newStatus === 'EXCEPTION') {
+      machineStatusUpdate.status = 'DOWN';
+    }
+    if (machineStatusUpdate.status) {
+      const { error: machErr } = await supabase
+        .from('machines')
+        .update(machineStatusUpdate)
+        .eq('id', sr.machine_id);
+      if (machErr) console.error('[workflow] machine status sync failed (non-fatal):', machErr.message);
+    }
+  }
+
   // Feature 7: auto-index the solution into the knowledge base on verification.
   if (newStatus === 'VERIFIED') {
     try {

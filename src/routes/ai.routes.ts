@@ -166,8 +166,24 @@ router.post('/match', authenticate, authorize('ADMIN', 'OPS_MANAGER'), validate(
       '/ai/match-technician',
       payload
     );
+    const techMap = new Map(eligibleTechnicians.map((t: any) => [t.id, t]));
+    const enrichRanked = (ranked: any[]) =>
+      ranked.map((r: any) => {
+        const tech = techMap.get(r.technician_id);
+        return {
+          ...r,
+          name: r.name ?? tech?.users?.full_name ?? tech?.employee_code ?? 'Technician',
+          specializations: r.specializations ?? tech?.specializations ?? [],
+        };
+      });
+
     if (aiResult.data) {
-      return res.json({ ...aiResult.data, source: 'ai' });
+      const enriched = {
+        ...aiResult.data,
+        source: 'ai',
+        ranked_technicians: enrichRanked((aiResult.data as any).ranked_technicians ?? []),
+      };
+      return res.json(enriched);
     }
 
     const stub = matchStub(eligibleTechnicians, sr);
@@ -255,5 +271,112 @@ router.post('/analyze-diagnosis', authenticate, validate({ body: aiDiagnosisSche
     return res.status(500).json({ error: message });
   }
 });
+
+/**
+ * GET /pipeline/:id
+ * Retrieve the AI triage pipeline results for a service request.
+ */
+router.get(
+  '/pipeline/:id',
+  authenticate,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { data, error } = await supabase
+        .from('service_requests')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error || !data) {
+        return res.status(404).json({ error: 'Service request not found' });
+      }
+      const sr = data as any;
+
+      // Fetch the prediction if one exists
+      const { data: prediction } = await supabase
+        .from('ai_predictions' as any)
+        .select('*')
+        .eq('service_request_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Fetch the impact analysis if one exists
+      const { data: impact } = await supabase
+        .from('impact_analyses')
+        .select('*')
+        .eq('service_request_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      return res.json({
+        pipeline_status: sr.ai_pipeline_status ?? 'PENDING',
+        completed_at: sr.ai_pipeline_completed_at,
+        steps: sr.ai_pipeline_steps ?? {},
+        classification: sr.ai_category ? {
+          category: sr.ai_category,
+          sub_category: sr.ai_sub_category,
+          priority: sr.ai_priority,
+          confidence: sr.ai_confidence,
+          urgency_score: sr.ai_urgency_score,
+          source: sr.ai_triage_source,
+          classified_at: sr.ai_triage_at,
+        } : null,
+        impact: impact ? {
+          cascading_impact_score: sr.cascading_impact_score,
+          impact_inr: sr.impact_inr,
+          cascade_depth: (impact as any).cascade_depth,
+          affected_machines: (impact as any).affected_machines,
+          source: (impact as any).source,
+        } : null,
+        prediction: prediction ?? null,
+        knowledge_matches: sr.ai_knowledge_matches ?? [],
+        recommended_technicians: sr.ai_recommended_technicians ?? [],
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ error: message });
+    }
+  }
+);
+
+/**
+ * POST /pipeline/:id/rerun
+ * Manually re-trigger the AI triage pipeline for a service request.
+ */
+router.post(
+  '/pipeline/:id/rerun',
+  authenticate,
+  authorize('ADMIN', 'OPS_MANAGER'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { data: sr } = await supabase
+        .from('service_requests')
+        .select('id')
+        .eq('id', id)
+        .single();
+
+      if (!sr) {
+        return res.status(404).json({ error: 'Service request not found' });
+      }
+
+      await supabase
+        .from('service_requests')
+        .update({ ai_pipeline_status: 'RUNNING' } as any)
+        .eq('id', id);
+
+      const { runTriagePipeline } = await import('../services/ai-orchestrator');
+      const result = await runTriagePipeline(id);
+
+      return res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ error: message });
+    }
+  }
+);
 
 export default router;

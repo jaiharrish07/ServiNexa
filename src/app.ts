@@ -30,6 +30,7 @@ import bidsRoutes from './routes/bids.routes';
 import stagingRoutes from './routes/staging.routes';
 import knowledgeRoutes from './routes/knowledge.routes';
 import dashboardRoutes from './routes/dashboard.routes';
+import documentRoutes from './routes/documents.routes';
 import { mountDocs } from './schemas/openapi';
 
 export function buildApp(): Express {
@@ -98,6 +99,7 @@ export function buildApp(): Express {
   app.use('/api', stagingRoutes); // staging
   app.use('/api', knowledgeRoutes); // knowledge
   app.use('/api', dashboardRoutes); // dashboard/sla-heatmap
+  app.use('/api', documentRoutes); // document upload/list/delete
   // ════════════════════════════════════════════════════════
 
   // ── 404 + global error handler (must be last) ──
