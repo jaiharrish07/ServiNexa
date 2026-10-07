@@ -49,11 +49,24 @@ describe('workflow pure helpers', () => {
     expect(canRoleTransition('EXCEPTION', 'CLOSED', 'OPS_MANAGER')).toBe(false);
     expect(canRoleTransition('EXCEPTION', 'CLOSED', 'ADMIN')).toBe(true);
   });
-  it('maps SLA windows and lists 11 statuses', () => {
+  it('maps SLA windows and lists all statuses incl. bidding', () => {
     expect(slaHoursFor('CRITICAL')).toBe(4);
     expect(slaHoursFor('LOW')).toBe(72);
     expect(slaHoursFor('???')).toBeUndefined();
-    expect(ALL_STATUSES).toHaveLength(11);
+    expect(ALL_STATUSES).toHaveLength(14);
+    expect(ALL_STATUSES).toContain('BIDDING');
+    expect(ALL_STATUSES).toContain('BID_REVIEW');
+    expect(ALL_STATUSES).toContain('BID_ACCEPTED');
+  });
+
+  it('supports the bidding detour (APPROVED→BIDDING→BID_REVIEW→BID_ACCEPTED→ASSIGNED)', () => {
+    expect(isTransitionAllowed('APPROVED', 'BIDDING')).toBe(true);
+    expect(isTransitionAllowed('APPROVED', 'ASSIGNED')).toBe(true); // direct-assign fallback kept
+    expect(isTransitionAllowed('BIDDING', 'BID_REVIEW')).toBe(true);
+    expect(isTransitionAllowed('BID_REVIEW', 'BID_ACCEPTED')).toBe(true);
+    expect(isTransitionAllowed('BID_ACCEPTED', 'ASSIGNED')).toBe(true);
+    expect(canRoleTransition('APPROVED', 'BIDDING', 'TECHNICIAN')).toBe(false);
+    expect(canRoleTransition('BID_REVIEW', 'BID_ACCEPTED', 'OPS_MANAGER')).toBe(true);
   });
 });
 

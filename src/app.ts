@@ -22,6 +22,14 @@ import reportRoutes from './routes/reports.routes';
 import workflowRoutes from './routes/workflow.routes';
 import aiRoutes from './routes/ai.routes';
 import auditRoutes from './routes/audit.routes';
+// ─── Dev A feature modules (Phase B — 7 novelty features) ───
+import impactRoutes from './routes/impact.routes';
+import partsRoutes from './routes/parts.routes';
+import visualDiagnosesRoutes from './routes/visual-diagnoses.routes';
+import bidsRoutes from './routes/bids.routes';
+import stagingRoutes from './routes/staging.routes';
+import knowledgeRoutes from './routes/knowledge.routes';
+import dashboardRoutes from './routes/dashboard.routes';
 import { mountDocs } from './schemas/openapi';
 
 export function buildApp(): Express {
@@ -79,8 +87,17 @@ export function buildApp(): Express {
 
   // ══════════════════ DEV A ROUTES (merged) ══════════════════
   app.use('/api/service-requests', workflowRoutes); // adds /:id/transition, /:id/exception
-  app.use('/api/ai', aiRoutes); // classify, predict, match, anomalies
+  app.use('/api/ai', aiRoutes); // classify, predict, match, anomalies, analyze-diagnosis
   app.use('/api/audit', auditRoutes); // audit log + chain verify
+
+  // Phase B feature routers (full sub-paths declared inside each, mounted at /api).
+  app.use('/api', impactRoutes); // impact-analysis, dependencies
+  app.use('/api', partsRoutes); // parts-sourcing, inventory, substitutes
+  app.use('/api', visualDiagnosesRoutes); // visual-diagnoses, technician-diagnoses
+  app.use('/api', bidsRoutes); // bid-rounds, bids
+  app.use('/api', stagingRoutes); // staging
+  app.use('/api', knowledgeRoutes); // knowledge
+  app.use('/api', dashboardRoutes); // dashboard/sla-heatmap
   // ════════════════════════════════════════════════════════
 
   // ── 404 + global error handler (must be last) ──

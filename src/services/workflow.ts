@@ -20,6 +20,9 @@ export const ALL_STATUSES = [
   'VALIDATING',
   'PENDING_APPROVAL',
   'APPROVED',
+  'BIDDING',
+  'BID_REVIEW',
+  'BID_ACCEPTED',
   'ASSIGNED',
   'IN_PROGRESS',
   'COMPLETED',
@@ -34,7 +37,10 @@ const TRANSITIONS: Record<string, string[]> = {
   SUBMITTED: ['VALIDATING'],
   VALIDATING: ['PENDING_APPROVAL', 'DRAFT'], // can bounce back
   PENDING_APPROVAL: ['APPROVED', 'DRAFT'], // can reject
-  APPROVED: ['ASSIGNED'],
+  APPROVED: ['BIDDING', 'ASSIGNED'], // BIDDING = collaborative bidding; ASSIGNED = direct-assign fallback
+  BIDDING: ['BID_REVIEW', 'EXCEPTION'],
+  BID_REVIEW: ['BID_ACCEPTED', 'BIDDING'], // can reopen bidding
+  BID_ACCEPTED: ['ASSIGNED'],
   ASSIGNED: ['IN_PROGRESS', 'EXCEPTION'],
   IN_PROGRESS: ['COMPLETED', 'EXCEPTION'],
   COMPLETED: ['VERIFIED', 'IN_PROGRESS'], // can reopen
@@ -52,6 +58,12 @@ const TRANSITION_ROLES: Record<string, string[]> = {
   'PENDING_APPROVAL->APPROVED': ['OPS_MANAGER', 'ADMIN'],
   'PENDING_APPROVAL->DRAFT': ['OPS_MANAGER', 'ADMIN'],
   'APPROVED->ASSIGNED': ['OPS_MANAGER', 'ADMIN'],
+  'APPROVED->BIDDING': ['OPS_MANAGER', 'ADMIN'],
+  'BIDDING->BID_REVIEW': ['OPS_MANAGER', 'ADMIN'],
+  'BIDDING->EXCEPTION': ['TECHNICIAN', 'OPS_MANAGER', 'ADMIN'],
+  'BID_REVIEW->BID_ACCEPTED': ['OPS_MANAGER', 'ADMIN'],
+  'BID_REVIEW->BIDDING': ['OPS_MANAGER', 'ADMIN'],
+  'BID_ACCEPTED->ASSIGNED': ['OPS_MANAGER', 'ADMIN'],
   'ASSIGNED->IN_PROGRESS': ['TECHNICIAN', 'OPS_MANAGER', 'ADMIN'],
   'ASSIGNED->EXCEPTION': ['TECHNICIAN', 'OPS_MANAGER', 'ADMIN'],
   'IN_PROGRESS->COMPLETED': ['TECHNICIAN', 'OPS_MANAGER', 'ADMIN'],
@@ -238,6 +250,16 @@ export async function transitionStatus(
     await notifyStatusChange(updated, currentStatus, newStatus);
   } catch (err: any) {
     console.error('[workflow] notification failed (non-fatal):', err?.message || err);
+  }
+
+  // Feature 7: auto-index the solution into the knowledge base on verification.
+  if (newStatus === 'VERIFIED') {
+    try {
+      const { indexFromRequest } = await import('./knowledge.service');
+      await indexFromRequest(requestId);
+    } catch (err: any) {
+      console.error('[workflow] knowledge index failed (non-fatal):', err?.message || err);
+    }
   }
 
   return { success: true, service_request: updated };

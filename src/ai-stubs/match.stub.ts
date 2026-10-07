@@ -1,7 +1,17 @@
+interface MatchFactors {
+  skill_match: number;
+  proximity: number;
+  workload: number;
+  experience: number;
+  certification: number;
+}
+
 interface RankedTechnician {
   technician_id: string;
   score: number;
+  match_score: number; // alias of score (new-spec key)
   reasoning: string;
+  factors: MatchFactors;
 }
 
 /**
@@ -52,10 +62,27 @@ export function matchStub(
         score += (tech.rating - 4) * 2;
       }
 
+      const finalScore = Math.round(Math.max(0, Math.min(score, 100)));
+      const matched =
+        request?.category &&
+        Array.isArray(tech.specializations) &&
+        tech.specializations
+          .map((s: unknown) => String(s).toLowerCase())
+          .includes(String(request.category).toLowerCase());
+      const factors: MatchFactors = {
+        skill_match: matched ? 100 : 10,
+        proximity: tech.site_id && request?.site_id && tech.site_id === request.site_id ? 100 : 40,
+        workload: Math.round(Math.max(0, Math.min(100, loadFactor * 100))),
+        experience: typeof tech.rating === 'number' ? Math.round((tech.rating / 5) * 100) : 70,
+        certification: Array.isArray(tech.certifications) && tech.certifications.length > 0 ? 80 : 40,
+      };
+
       return {
         technician_id: tech.id,
-        score: Math.round(Math.max(0, Math.min(score, 100))),
+        score: finalScore,
+        match_score: finalScore,
         reasoning: reasons.join('; '),
+        factors,
       };
     });
 

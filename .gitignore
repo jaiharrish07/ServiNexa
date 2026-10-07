@@ -14,3 +14,9 @@ ai-service/*.joblib
 
 # Editor vaults
 .obsidian/
+
+# Python (global)
+__pycache__/
+*.pyc
+ai-service/.venv/
+ai-service/**/__pycache__/

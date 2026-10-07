@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { classifyStub } from '../src/ai-stubs/classify.stub';
 import { predictStub } from '../src/ai-stubs/predict.stub';
 import { matchStub } from '../src/ai-stubs/match.stub';
+import { diagnosisStub } from '../src/ai-stubs/diagnosis.stub';
 
 describe('classifyStub', () => {
   it('maps hydraulic/leak → HYDRAULIC/HIGH', () => {
@@ -71,5 +72,52 @@ describe('matchStub', () => {
   it('returns empty list for non-array input', () => {
     // @ts-expect-error intentional bad input
     expect(matchStub(null, request).ranked_technicians).toEqual([]);
+  });
+
+  it('includes match_score (== score) and a factors breakdown', () => {
+    const top = matchStub(techs, request).ranked_technicians[0];
+    expect(top.match_score).toBe(top.score);
+    expect(top.factors.skill_match).toBe(100); // t1 specializes in hydraulic
+    expect(top.factors.proximity).toBe(100); // same site
+    expect(top.factors).toHaveProperty('workload');
+  });
+});
+
+describe('superset fields (live == stub parity)', () => {
+  it('classifyStub returns sub_category + SLA/urgency/complexity', () => {
+    const r = classifyStub('hydraulic leak');
+    expect(r.sub_category).toBe('SEAL_LEAK');
+    expect(r.suggested_sla_hours).toBe(8); // HIGH
+    expect(r.urgency_score).toBeGreaterThan(0);
+    expect(['LOW', 'MEDIUM', 'HIGH']).toContain(r.estimated_complexity);
+  });
+
+  it('predictStub mirrors risk_score and names the predicted_failure_mode', () => {
+    const r = predictStub({ air_temp: 25.5, process_temp: 38.2, rotational_speed: 1480, torque: 55.3, tool_wear: 210 });
+    expect(r.risk_score).toBe(r.failure_probability);
+    expect(r.predicted_failure_mode).toBe('Tool Wear Failure');
+    expect(r.confidence).toBeGreaterThan(0);
+    expect(r.reasoning).toBeTruthy();
+  });
+
+  it('predictStub reports "None" predicted mode when healthy', () => {
+    const r = predictStub({ air_temp: 23, process_temp: 30, rotational_speed: 1500, torque: 35, tool_wear: 50 });
+    expect(r.predicted_failure_mode).toBe('None');
+  });
+});
+
+describe('diagnosisStub', () => {
+  it('maps SEAL_LEAK to the hydraulic pump component', () => {
+    const r = diagnosisStub({ machine_type: 'CNC Mill', sub_category: 'SEAL_LEAK' });
+    expect(r.affected_component_id).toBe('hydraulic_pump');
+    expect(r.diagnostic_questions_for_technicians.length).toBeGreaterThan(0);
+  });
+
+  it('flags electrical fire as CRITICAL', () => {
+    expect(diagnosisStub({ machine_type: 'Press', sub_category: 'ELECTRICAL_FIRE' }).severity_assessment).toBe('CRITICAL');
+  });
+
+  it('falls back to the main body for unknown sub_categories', () => {
+    expect(diagnosisStub({ machine_type: 'X', sub_category: 'WHATEVER' }).affected_component_id).toBe('main_body');
   });
 });

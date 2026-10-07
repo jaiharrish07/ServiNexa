@@ -13,9 +13,13 @@ interface FailureMode {
 
 interface PredictResult {
   failure_probability: number;
+  risk_score: number; // alias of failure_probability (new-spec key)
   risk_level: string;
+  predicted_failure_mode: string;
+  confidence: number;
   failure_modes: FailureMode[];
   recommended_action: string;
+  reasoning: string;
 }
 
 /**
@@ -82,10 +86,23 @@ export function predictStub(machineData: MachineData): PredictResult {
       ? 'Schedule immediate maintenance inspection'
       : 'Continue monitoring, next scheduled maintenance adequate';
 
+  // Most likely failure mode drives the new-spec `predicted_failure_mode`.
+  const top = failure_modes.reduce((a, b) => (b.probability > a.probability ? b : a));
+  const predicted_failure_mode = top.mode === 'No significant risk detected' ? 'None' : top.mode;
+  const confidence = modes.length > 0 ? 0.6 : 0.8;
+  const reasoning =
+    modes.length > 0
+      ? `Rule-based: ${modes.map((m) => m.mode).join(', ')} indicated by abnormal readings.`
+      : 'Rule-based: all readings within normal operating ranges.';
+
   return {
     failure_probability,
+    risk_score: failure_probability,
     risk_level,
+    predicted_failure_mode,
+    confidence,
     failure_modes,
     recommended_action,
+    reasoning,
   };
 }
