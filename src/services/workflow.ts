@@ -252,6 +252,16 @@ export async function transitionStatus(
     console.error('[workflow] notification failed (non-fatal):', err?.message || err);
   }
 
+  // Feature 7: auto-index the solution into the knowledge base on verification.
+  if (newStatus === 'VERIFIED') {
+    try {
+      const { indexFromRequest } = await import('./knowledge.service');
+      await indexFromRequest(requestId);
+    } catch (err: any) {
+      console.error('[workflow] knowledge index failed (non-fatal):', err?.message || err);
+    }
+  }
+
   return { success: true, service_request: updated };
 }
 
