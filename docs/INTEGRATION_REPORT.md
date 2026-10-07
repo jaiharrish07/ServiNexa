@@ -1,5 +1,7 @@
 # ServiNexa — 7-Feature Integration Report
 
+> **Historical planning snapshot:** this report was written before Dev B's backend was integrated and its inventory below is stale. The current `integration` branch includes Dev A workflow, audit, AI routes and the Dev B CRUD, notifications, and reports. Use the repository `README.md` for current clone, database, and run instructions.
+
 > Target stack: **Next.js 14 (App Router) + Express/TypeScript API + Supabase (Postgres/Auth/Realtime)**
 > Scope: integration plan for Features 1–7 on top of the existing backend.
 > Generated against the live codebase at `D:\ServiNexa`.

@@ -8,10 +8,15 @@ import { supabase } from '../src/config/supabase';
 import { env } from '../src/config/env';
 
 function assertRealCredentials() {
-  if (env.SUPABASE_URL.includes('localhost') || env.SUPABASE_SERVICE_KEY.startsWith('placeholder')) {
+  const placeholders = /localhost|your-|xxxxx|placeholder|example/i;
+  if (
+    placeholders.test(env.SUPABASE_URL) ||
+    placeholders.test(env.SUPABASE_ANON_KEY) ||
+    placeholders.test(env.SUPABASE_SERVICE_KEY)
+  ) {
     console.error(
       '\n❌ Supabase credentials look like placeholders.\n' +
-        '   Add real SUPABASE_URL + SUPABASE_SERVICE_KEY to .env (get them from Jai / the Supabase dashboard),\n' +
+        '   Add real SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_KEY values to .env,\n' +
         '   make sure the schema has been applied, then re-run `npm run seed`.\n',
     );
     process.exit(1);

@@ -382,7 +382,26 @@ CREATE POLICY "Service role full access" ON public.notifications    FOR ALL USIN
 
 -- ============================================================================
 -- REALTIME
--- After running this script, enable Realtime for the following tables in the
--- Supabase Dashboard -> Database -> Replication:
---   service_requests, work_orders, exception_flags, machines, notifications
+-- Add the operational tables to Supabase's Realtime publication when that
+-- publication exists. Re-running this schema does not add duplicates.
 -- ============================================================================
+DO $$
+DECLARE
+    table_name TEXT;
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        FOREACH table_name IN ARRAY ARRAY[
+            'service_requests', 'work_orders', 'exception_flags', 'machines', 'notifications'
+        ] LOOP
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_publication_tables
+                WHERE pubname = 'supabase_realtime'
+                  AND schemaname = 'public'
+                  AND tablename = table_name
+            ) THEN
+                EXECUTE format('ALTER PUBLICATION %I ADD TABLE public.%I', 'supabase_realtime', table_name);
+            END IF;
+        END LOOP;
+    END IF;
+END;
+$$;

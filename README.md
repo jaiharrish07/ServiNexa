@@ -1,86 +1,94 @@
-# DQBH Platform — Backend API
+# ServiNexa / DQBH Backend
 
-Industrial Equipment Activity Management platform. Express 4 + TypeScript over Supabase
-(Postgres + Auth), with a separate Python AI microservice (`ai-service/`, Dev A/researcher)
-and a Next.js frontend (`frontend/`, built last).
+Express 4 + TypeScript API backed by Supabase Postgres and Supabase Auth. This integrated backend includes the Dev B CRUD, reports, notifications, and seed tooling, plus Dev A workflow transitions, exception handling, audit verification, and AI endpoints with local stub fallbacks.
 
-This repository currently contains the **Dev B slice**: the Express scaffold, all CRUD
-routes, notifications, reports, and seed/smoke tooling — built standalone-runnable and fully
-tested. Dev A's workflow engine, audit chain, and AI routes merge in on top (see **Merging
-Dev A** below).
+This repository is the backend. The AI service is optional and runs separately; without it, AI endpoints return deterministic local stub results.
 
-## Quick start
+## Requirements
+
+- Node.js 18 or newer and npm
+- A Supabase project you control
+- PostgreSQL CLI (`psql`) for `npm run db:setup`
+
+Do not commit `.env` or share the Supabase service role key. Each developer should use their own Supabase project or credentials supplied through a secure channel.
+
+## Fresh clone setup
 
 ```bash
+git clone https://github.com/jaiharrish07/ServiNexa.git
+cd ServiNexa
 npm install
-cp .env.example .env            # fill in real Supabase creds (from Jai) for live runs
-npm run dev                     # http://localhost:3001  (health, docs below)
-npm test                        # 76 tests, no external infra needed (Supabase is mocked)
+cp .env.example .env
 ```
 
-- Health (liveness): `GET /health`
-- Readiness (DB ping): `GET /health/ready`
-- **Interactive API docs (OpenAPI/Swagger): `GET /api/docs`** · raw spec: `GET /api/docs.json`
+In `.env`, fill in these values from Supabase Project Settings:
 
-## Scripts
+- `SUPABASE_URL`: Project URL
+- `SUPABASE_ANON_KEY`: anon/public key
+- `SUPABASE_SERVICE_KEY`: service role key; keep this server-side and secret
+- `DATABASE_URL`: PostgreSQL URI from Project Settings → Database → Connection string
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start the API with hot reload (tsx) |
-| `npm run build` / `npm start` | Compile to `dist/` and run |
-| `npm run typecheck` | `tsc --noEmit` (zero errors) |
-| `npm test` / `npm run test:cov` | Vitest suite (+ coverage) against the in-memory Supabase mock |
-| `npm run seed` | Seed demo data — **needs real Supabase creds + schema applied** |
-| `npm run smoke` | End-to-end walkthrough against a running, seeded server |
+Then apply the schema and load demo records:
 
-## What Dev B built (endpoints)
-
-Auth (`/api/auth`): signup, login, me. CRUD for `/api/sites`, `/api/machines`,
-`/api/technicians`, `/api/service-requests`, `/api/work-orders`, `/api/spare-parts`
-(+ atomic `/:id/reserve`). Notifications (`/api/notifications`: list, unread-count,
-mark-read, read-all). Reports (`/api/reports`: dashboard, sla, **mttr**, **utilization**,
-parts-rebalance).
-
-### Advanced upgrades over the base guide
-- **Zod validation + field whitelisting** on every write (closes the `insert(req.body)`
-  mass-assignment hole) — server-controlled fields like SR `status`/`requester_id` can't be
-  set by clients.
-- **Pagination / sort / search** on every list endpoint (additive `meta`, existing keys
-  unchanged).
-- **Race-safe spare-part reservation** via optimistic concurrency + bounded retry (no lost
-  updates under concurrent reserves — covered by a parallel-reservation test).
-- **Collision-safe** SR/WO numbers (retry on unique-violation).
-- **MTTR + technician-utilization reports** (named in the deliverables, never implemented in
-  the guide).
-- **OpenAPI/Swagger UI**, **rate limiting**, **structured logging (pino) with request IDs**,
-  **CORS allowlist + helmet + body caps**, `asyncHandler` everywhere, graceful shutdown,
-  and a **readiness probe**.
-- **76 automated tests** (90% statement coverage) running with zero external infrastructure.
-
-## Merging Dev A
-
-Dev A owns (do not duplicate): `sql/schema.sql`, `src/services/workflow.ts`,
-`src/routes/workflow.routes.ts`, `src/services/audit.ts`, `src/routes/audit.routes.ts`,
-`src/services/ai-client.ts`, `src/ai-stubs/*`, `src/routes/ai.routes.ts`.
-
-To light up the full 36-endpoint server after merge:
-1. Add `sql/schema.sql` and apply it in Supabase; put real creds in `.env`.
-2. In `src/app.ts`, uncomment the **DEV A MERGE POINT** block (workflow / ai / audit mounts).
-3. Dev A's workflow engine imports `notifyStatusChange` from `src/services/notifications.ts`
-   (already built, signature stable) and `createAuditLog` from their own audit service.
-4. `npm run seed` then `npm run smoke` to verify end-to-end.
-
-## Layout
-
+```bash
+npm run db:setup
+npm run seed
 ```
-src/
-  app.ts            # app builder (middleware, routes, merge point)  index.ts # listen
-  config/           # env (zod-validated), supabase client, ai-service
-  middleware/       # auth, error-handler(+asyncHandler), validate, rate-limit, request-context
-  routes/           # 9 Dev B route modules
-  services/         # notifications, reports
-  schemas/          # per-entity Zod schemas + openapi doc
-  utils/            # request-number (unique retry), query (pagination), api-response
-scripts/            # seed.ts, smoke.ts
-tests/              # 9 test files + in-memory Supabase mock harness
+
+`db:setup` applies [`sql/schema.sql`](sql/schema.sql) with `psql` and stops on the first SQL error. The schema can be safely reapplied. If you do not have `psql`, open the Supabase SQL Editor, run the full contents of `sql/schema.sql`, then run `npm run seed` locally.
+
+Start the API in another terminal:
+
+```bash
+npm run dev
 ```
+
+Check the server and database:
+
+```bash
+curl http://localhost:3001/health
+curl http://localhost:3001/health/ready
+```
+
+The API should be available at `http://localhost:3001`; Swagger UI is at `/api/docs` and the raw OpenAPI document is at `/api/docs.json`.
+
+## Verify the setup
+
+With the API running and demo data seeded:
+
+```bash
+npm test
+npm run typecheck
+npm run build
+npm run smoke
+```
+
+`npm run smoke` performs a live walkthrough and writes a demo service request, work order, and part reservation to the configured database. `npm run demo` exercises classification, workflow transitions, technician matching, prediction, dashboard reporting, and audit verification; it also creates demo records.
+
+Demo accounts created by the seed script:
+
+| Role | Email | Password |
+|---|---|---|
+| Admin | `admin@dqbh.com` | `Admin123!` |
+| Operations manager | `ops@dqbh.com` | `Ops123!` |
+| Technician | `alex.chen@dqbh.com` | `Tech123!` |
+| Customer | `customer@dqbh.com` | `Cust123!` |
+
+These are development demo credentials. Do not use them for a public deployment.
+
+## Database and security notes
+
+- The Express API connects with the Supabase service role key. Keep it only in the backend environment; never put it in a browser app.
+- The included SQL uses permissive policies intended for the hackathon/demo setup. Review and replace them with per-role and per-site policies before exposing direct Supabase access to clients.
+- The schema adds operational tables to the `supabase_realtime` publication when it exists. Client subscriptions still need to use Supabase Realtime and appropriate read policies.
+- `DATABASE_URL` is used only by the schema setup script. Runtime API queries use `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`.
+
+## Main API areas
+
+- Auth: `/api/auth` (signup, login, current user)
+- CRUD: `/api/sites`, `/api/machines`, `/api/technicians`, `/api/service-requests`, `/api/work-orders`, `/api/spare-parts`
+- Workflow: `/api/service-requests/:id/transition` and `/api/service-requests/:id/exception`
+- AI: `/api/ai/classify`, `/api/ai/predict`, `/api/ai/match`, `/api/ai/anomalies`
+- Audit: `/api/audit` and `/api/audit/verify`
+- Notifications: `/api/notifications`
+- Reports: `/api/reports/dashboard`, `sla`, `mttr`, `utilization`, and `parts-rebalance`

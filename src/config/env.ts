@@ -40,9 +40,9 @@ export const env = parsed.data;
 // Fail fast if someone ships to production without real Supabase credentials.
 if (isProd) {
   const placeholders = [
-    env.SUPABASE_URL.includes('localhost'),
-    env.SUPABASE_SERVICE_KEY.startsWith('placeholder'),
-    env.SUPABASE_ANON_KEY.startsWith('placeholder'),
+    /localhost|your-project-ref|xxxxx|placeholder/i.test(env.SUPABASE_URL),
+    /your-|xxxxx|placeholder|example/i.test(env.SUPABASE_SERVICE_KEY),
+    /your-|xxxxx|placeholder|example/i.test(env.SUPABASE_ANON_KEY),
   ];
   if (placeholders.some(Boolean)) {
     // eslint-disable-next-line no-console
