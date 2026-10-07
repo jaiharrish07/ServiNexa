@@ -86,6 +86,12 @@ describe('service-requests', () => {
     expect(created.status).toBe('DRAFT');
     expect(created.requester_id).toBe(u.id);
     expect(created.request_number).toMatch(/^SR-\d{8}-\d{3}$/);
+    const creationAudit = getTable('audit_logs').find((entry) => entry.entity_id === created.id);
+    expect(creationAudit).toMatchObject({
+      entity_type: 'service_request',
+      action: 'CREATE',
+      metadata: { request_number: created.request_number },
+    });
   });
 
   it('ignores client attempts to set status / requester_id (mass-assignment)', async () => {

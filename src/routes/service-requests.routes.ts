@@ -9,6 +9,7 @@ import { generateRequestNumber, insertWithUniqueNumber } from '../utils/request-
 import { idParam } from '../schemas/common';
 import { serviceRequestCreateSchema, serviceRequestUpdateSchema } from '../schemas/service-requests';
 import { notifyRequestCreated } from '../services/notifications';
+import { createAuditLog } from '../services/audit';
 import { getAccessibleServiceRequest, getServiceRequestScope } from '../utils/access';
 
 const router = Router();
@@ -88,6 +89,16 @@ router.post(
           .single(),
     });
     const sr = unwrap(result);
+
+    // Keep the public request number bound to its immutable UUID in the audit chain.
+    // This preserves traceability if an operational row is later removed outside the API.
+    await createAuditLog({
+      entity_type: 'service_request',
+      entity_id: sr.id,
+      action: 'CREATE',
+      performed_by: req.user!.id,
+      metadata: { request_number: sr.request_number },
+    });
 
     // Live notification producer (fire-and-forget; never throws / never blocks the response).
     await notifyRequestCreated(sr);
