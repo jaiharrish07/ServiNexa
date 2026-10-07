@@ -24,7 +24,13 @@ import {
   UserCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, isValid } from 'date-fns';
+
+function safeFormat(value: unknown, fmt: string, fallback = '-') {
+  if (!value) return fallback;
+  const d = new Date(value as string | number);
+  return isValid(d) ? format(d, fmt) : fallback;
+}
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
 import type {
@@ -407,7 +413,7 @@ export default function ServiceRequestDetailPage() {
             <div>
               <p className="text-xs text-[var(--text-muted)]">Created</p>
               <p className="text-sm font-medium text-[var(--text-primary)]">
-                {format(new Date(request.created_at), 'dd MMM yyyy')}
+                {safeFormat(request.created_at, 'dd MMM yyyy')}
               </p>
             </div>
           </div>
@@ -655,7 +661,7 @@ export default function ServiceRequestDetailPage() {
                               </p>
                             )}
                             <p className="text-[10px] text-[var(--text-muted)] mt-2">
-                              {wo.created_at ? format(new Date(wo.created_at), 'dd MMM yyyy HH:mm') : '-'}
+                              {safeFormat(wo.created_at, 'dd MMM yyyy HH:mm')}
                             </p>
                           </Card>
                         ))}
@@ -708,7 +714,7 @@ export default function ServiceRequestDetailPage() {
                               )}
                             </div>
                             <p className="text-[10px] text-[var(--text-muted)] mt-3">
-                              Submitted {format(new Date(bid.submitted_at), 'dd MMM yyyy HH:mm')}
+                              Submitted {safeFormat(bid.submitted_at, 'dd MMM yyyy HH:mm')}
                             </p>
                           </Card>
                         ))}
@@ -789,7 +795,7 @@ export default function ServiceRequestDetailPage() {
                                     )}
                                   </div>
                                   <span className="text-[10px] text-[var(--text-muted)] whitespace-nowrap">
-                                    {format(new Date(log.created_at), 'dd MMM yyyy HH:mm')}
+                                    {safeFormat(log.created_at, 'dd MMM yyyy HH:mm')}
                                   </span>
                                 </div>
                                 <p className="text-xs text-[var(--text-muted)] mt-2">
