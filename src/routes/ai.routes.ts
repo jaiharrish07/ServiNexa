@@ -5,6 +5,7 @@ import { callAIService } from '../services/ai-client';
 import { classifyStub } from '../ai-stubs/classify.stub';
 import { predictStub } from '../ai-stubs/predict.stub';
 import { matchStub } from '../ai-stubs/match.stub';
+import { diagnosisStub } from '../ai-stubs/diagnosis.stub';
 
 const router = Router();
 
@@ -214,5 +215,35 @@ router.post(
     }
   }
 );
+
+/**
+ * POST /analyze-diagnosis
+ * 3D visual-diagnosis analysis — identify the affected component + a remote
+ * diagnostic brief. Live-first with a rule-based stub fallback.
+ */
+router.post('/analyze-diagnosis', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { machine_type, sub_category, sensor_data, machine_history } = req.body ?? {};
+    if (!machine_type) {
+      return res.status(400).json({ error: 'machine_type is required' });
+    }
+
+    const aiResult = await callAIService<Record<string, unknown>>('/ai/analyze-diagnosis', {
+      machine_type,
+      sub_category,
+      sensor_data,
+      machine_history,
+    });
+    if (aiResult.data) {
+      return res.json({ ...aiResult.data, source: 'ai' });
+    }
+
+    const stub = diagnosisStub({ machine_type, sub_category, sensor_data });
+    return res.json({ ...stub, source: 'stub' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: message });
+  }
+});
 
 export default router;
