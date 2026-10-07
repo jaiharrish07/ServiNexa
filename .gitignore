@@ -9,7 +9,7 @@ ServiNexa/
 .DS_Store
 .vscode/
 ai-service/__pycache__/
-ai-service/.venv/
+ai-service/.venv*/
 ai-service/*.joblib
 
 # Editor vaults
@@ -18,5 +18,5 @@ ai-service/*.joblib
 # Python (global)
 __pycache__/
 *.pyc
-ai-service/.venv/
+ai-service/.venv*/
 ai-service/**/__pycache__/

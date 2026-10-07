@@ -17,6 +17,7 @@ const schema = z.object({
 
   AI_SERVICE_URL: z.string().default('http://localhost:8000'),
   AI_TIMEOUT_MS: z.coerce.number().default(5000),
+  AI_SERVICE_TOKEN: z.string().min(32).optional(),
 
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   CORS_ORIGINS: z.string().optional(),

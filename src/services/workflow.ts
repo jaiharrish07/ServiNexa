@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 import { createAuditLog } from './audit';
 import { notifyStatusChange } from './notifications';
+import { resolveTechnicianId } from '../utils/technician';
 
 /**
  * Workflow engine — the heart of the platform.
@@ -88,7 +89,7 @@ export interface TransitionResult {
   success: boolean;
   service_request?: any;
   error?: string;
-  code?: 'NOT_FOUND' | 'INVALID_TRANSITION' | 'FORBIDDEN' | 'DB_ERROR';
+  code?: 'NOT_FOUND' | 'INVALID_TRANSITION' | 'FORBIDDEN' | 'CONFLICT' | 'DB_ERROR';
 }
 
 // Pure helper — exported so it can be unit-tested without a database.
@@ -96,39 +97,14 @@ export function isTransitionAllowed(from: string, to: string): boolean {
   return (TRANSITIONS[from] || []).includes(to);
 }
 
-// Pure helper — role check for a given transition. Returns true if no explicit
-// restriction exists for the transition (fail-open only for undefined keys).
+// Pure helper — role checks fail closed if a transition is missing a policy.
 export function canRoleTransition(from: string, to: string, role: string): boolean {
   const allowed = TRANSITION_ROLES[`${from}->${to}`];
-  return !allowed || allowed.includes(role);
+  return Boolean(allowed?.includes(role));
 }
 
 export function slaHoursFor(priority: string): number | undefined {
   return SLA_HOURS[priority];
-}
-
-/**
- * Atomically adjust a technician's job count. Prefers the DB-side RPC
- * (increment_job_count / decrement_job_count) to avoid a read-modify-write
- * race under concurrency; falls back to a manual update if the RPC is absent.
- */
-async function adjustTechnicianJobCount(techId: string, delta: 1 | -1): Promise<void> {
-  const fn = delta === 1 ? 'increment_job_count' : 'decrement_job_count';
-  const { error } = await supabase.rpc(fn, { tech_id: techId });
-  if (!error) return;
-
-  // Fallback: read-modify-write (best-effort; used only if the RPC isn't deployed).
-  const { data } = await supabase
-    .from('technicians')
-    .select('current_job_count')
-    .eq('id', techId)
-    .single();
-
-  if (data) {
-    const current = data.current_job_count || 0;
-    const next = delta === 1 ? current + 1 : Math.max(0, current - 1);
-    await supabase.from('technicians').update({ current_job_count: next }).eq('id', techId);
-  }
 }
 
 export async function transitionStatus(
@@ -155,6 +131,18 @@ export async function transitionStatus(
   }
 
   const currentStatus = sr.status;
+
+  // A role check alone is insufficient: customers and technicians are limited to
+  // requests they own or are assigned to.
+  if (userRole === 'CUSTOMER' && sr.requester_id !== userId) {
+    return { success: false, error: 'You cannot change another customer\'s request', code: 'FORBIDDEN' };
+  }
+  if (userRole === 'TECHNICIAN') {
+    const technicianId = await resolveTechnicianId(userId);
+    if (!technicianId || sr.assigned_technician_id !== technicianId) {
+      return { success: false, error: 'You are not assigned to this request', code: 'FORBIDDEN' };
+    }
+  }
 
   // 2. Validate the transition is legal.
   if (!isTransitionAllowed(currentStatus, newStatus)) {
@@ -194,7 +182,9 @@ export async function transitionStatus(
   if (newStatus === 'ASSIGNED' && metadata?.technician_id) {
     updatePayload.assigned_technician_id = metadata.technician_id;
     updatePayload.assigned_at = new Date().toISOString();
-    await adjustTechnicianJobCount(metadata.technician_id, 1);
+  }
+  if (newStatus === 'ASSIGNED' && !metadata?.technician_id) {
+    return { success: false, error: 'technician_id is required for assignment', code: 'INVALID_TRANSITION' };
   }
 
   if (newStatus === 'IN_PROGRESS') {
@@ -204,10 +194,6 @@ export async function transitionStatus(
   if (newStatus === 'COMPLETED') {
     updatePayload.completed_at = new Date().toISOString();
     if (metadata?.resolution_notes) updatePayload.resolution_notes = metadata.resolution_notes;
-    // Free up the assigned technician.
-    if (sr.assigned_technician_id) {
-      await adjustTechnicianJobCount(sr.assigned_technician_id, -1);
-    }
   }
 
   if (newStatus === 'VERIFIED') {
@@ -219,16 +205,21 @@ export async function transitionStatus(
   }
 
   // 5. Apply the update.
-  const { data: updated, error: updateError } = await supabase
-    .from('service_requests')
-    .update(updatePayload)
-    .eq('id', requestId)
-    .select()
-    .single();
+  const { data: updated, error: updateError } = await supabase.rpc('transition_service_request', {
+    p_request_id: requestId,
+    p_expected_status: currentStatus,
+    p_payload: updatePayload,
+  });
 
   if (updateError) {
+    if (updateError.code === '40001' || updateError.code === 'P0002') {
+      return { success: false, error: 'Request status changed concurrently; reload and retry', code: 'INVALID_TRANSITION' };
+    }
+    if (updateError.code === '23514') return { success: false, error: updateError.message, code: 'CONFLICT' };
     return { success: false, error: updateError.message, code: 'DB_ERROR' };
   }
+  const updatedRequest = Array.isArray(updated) ? updated[0] : updated;
+  if (!updatedRequest) return { success: false, error: 'Transition returned no updated request', code: 'DB_ERROR' };
 
   // 6. Side effects — audit + notify. Non-fatal: never fail a committed transition.
   try {
@@ -247,7 +238,7 @@ export async function transitionStatus(
   }
 
   try {
-    await notifyStatusChange(updated, currentStatus, newStatus);
+    await notifyStatusChange(updatedRequest, currentStatus, newStatus);
   } catch (err: any) {
     console.error('[workflow] notification failed (non-fatal):', err?.message || err);
   }
@@ -262,7 +253,7 @@ export async function transitionStatus(
     }
   }
 
-  return { success: true, service_request: updated };
+  return { success: true, service_request: updatedRequest };
 }
 
 /**

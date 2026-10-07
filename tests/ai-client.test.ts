@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll, vi } from 'vitest';
 
-vi.mock('../src/config/ai-service', () => ({ AI_SERVICE_URL: 'http://ai.test', AI_TIMEOUT_MS: 50 }));
+vi.mock('../src/config/ai-service', () => ({ AI_SERVICE_URL: 'http://ai.test', AI_SERVICE_TOKEN: 'test-only-token', AI_TIMEOUT_MS: 50 }));
 
 import { callAIService } from '../src/services/ai-client';
 

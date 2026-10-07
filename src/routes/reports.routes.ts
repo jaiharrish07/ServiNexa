@@ -20,6 +20,7 @@ const siteId = (req: AuthRequest): string | undefined => reportQuerySchema.parse
 router.get(
   '/dashboard',
   authenticate,
+  authorize('ADMIN', 'OPS_MANAGER'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     res.json(wrap('dashboard', await getDashboardStats(siteId(req))));
   }),

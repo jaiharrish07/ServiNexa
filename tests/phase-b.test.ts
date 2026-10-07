@@ -56,9 +56,10 @@ describe('bidding flow (service level, stub-backed)', () => {
   it('accepts a bid: → ASSIGNED, winner ACCEPTED, parts staged, tech job++', async () => {
     seedBiddingWorld();
     await openBidding('sr1', 2, 'ops1', 'OPS_MANAGER');
+    const roundId = getTable('bid_rounds')[0].id;
     seedTable('solution_bids', [
-      { id: 'b1', service_request_id: 'sr1', technician_id: 't1', proposed_solution: 'seal kit', parts_list: [{ part_number: 'HS-100', quantity: 1 }], labor_hours: 3, total_cost: 4500, status: 'SUBMITTED' },
-      { id: 'b2', service_request_id: 'sr1', technician_id: 't2', proposed_solution: 'pump', parts_list: [], labor_hours: 8, total_cost: 22000, status: 'SUBMITTED' },
+      { id: 'b1', bid_round_id: roundId, service_request_id: 'sr1', technician_id: 't1', proposed_solution: 'seal kit', parts_list: [{ part_number: 'HS-100', quantity: 1 }], labor_hours: 3, total_cost: 4500, status: 'SUBMITTED' },
+      { id: 'b2', bid_round_id: roundId, service_request_id: 'sr1', technician_id: 't2', proposed_solution: 'pump', parts_list: [], labor_hours: 8, total_cost: 22000, status: 'SUBMITTED' },
     ]);
     await scoreBids('sr1', 'ops1', 'OPS_MANAGER');
 
@@ -73,6 +74,16 @@ describe('bidding flow (service level, stub-backed)', () => {
     expect(bids.find((b) => b.id === 'b2')!.status).toBe('REJECTED');
     expect(getTable('parts_staging').length).toBe(1); // HS-100 staged
     expect(getTable('technicians').find((t) => t.id === 't1')!.current_job_count).toBe(1);
+  });
+
+  it('rejects a stale bid acceptance without changing any bid state', async () => {
+    seedBiddingWorld();
+    seedTable('solution_bids', [{ id: 'b1', service_request_id: 'sr1', technician_id: 't1', status: 'SUBMITTED' }]);
+    const result = await acceptBid('b1', 'ops1', 'OPS_MANAGER');
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('INVALID_TRANSITION');
+    expect(getTable('solution_bids')[0].status).toBe('SUBMITTED');
+    expect(getTable('service_requests')[0].status).toBe('APPROVED');
   });
 });
 
@@ -105,12 +116,13 @@ describe('SLA heatmap route', () => {
 
 describe('blind bidding visibility', () => {
   const app = testApp((a) => a.use('/api', bidsRoutes));
+  const requestId = '11111111-1111-4111-8111-111111111111';
 
   function seedBids() {
-    seedTable('bid_rounds', [{ id: 'r1', service_request_id: 'sr1', status: 'OPEN', opened_at: new Date().toISOString() }]);
+    seedTable('bid_rounds', [{ id: 'r1', service_request_id: requestId, status: 'OPEN', opened_at: new Date().toISOString() }]);
     seedTable('solution_bids', [
-      { id: 'b1', service_request_id: 'sr1', technician_id: 't1', proposed_solution: 'a', labor_hours: 3, total_cost: 4500, status: 'SUBMITTED', submitted_at: new Date().toISOString() },
-      { id: 'b2', service_request_id: 'sr1', technician_id: 't2', proposed_solution: 'b', labor_hours: 5, total_cost: 8000, status: 'SUBMITTED', submitted_at: new Date().toISOString() },
+      { id: 'b1', service_request_id: requestId, technician_id: 't1', proposed_solution: 'a', labor_hours: 3, total_cost: 4500, status: 'SUBMITTED', submitted_at: new Date().toISOString() },
+      { id: 'b2', service_request_id: requestId, technician_id: 't2', proposed_solution: 'b', labor_hours: 5, total_cost: 8000, status: 'SUBMITTED', submitted_at: new Date().toISOString() },
     ]);
   }
 
@@ -118,7 +130,7 @@ describe('blind bidding visibility', () => {
     const u = seedUser('TECHNICIAN', { id: 'tu1' });
     seedTable('technicians', [{ id: 't1', user_id: 'tu1', is_available: true }]);
     seedBids();
-    const res = await request(app).get('/api/bids/sr1').set('Authorization', u.bearer).expect(200);
+    const res = await request(app).get(`/api/bids/${requestId}`).set('Authorization', u.bearer).expect(200);
     expect(res.body.visibility).toBe('own');
     expect(res.body.bids.map((b: any) => b.id)).toEqual(['b1']);
   });
@@ -127,7 +139,7 @@ describe('blind bidding visibility', () => {
     const u = seedUser('OPS_MANAGER');
     seedTable('technicians', [{ id: 't1', user_id: 'tu1' }, { id: 't2', user_id: 'tu2' }]);
     seedBids();
-    const res = await request(app).get('/api/bids/sr1').set('Authorization', u.bearer).expect(200);
+    const res = await request(app).get(`/api/bids/${requestId}`).set('Authorization', u.bearer).expect(200);
     expect(res.body.visibility).toBe('all');
     expect(res.body.bids.length).toBe(2);
   });

@@ -81,38 +81,46 @@ function sha256(s: string): string {
  */
 export async function createAuditLog(entry: AuditEntry): Promise<any> {
   try {
-    const { data: lastLog, error: lastErr } = await supabase
-      .from('audit_logs')
-      .select('hash')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // The database takes an advisory transaction lock and checks prev_hash. If
+    // another request appended first, retry using that new head instead of
+    // creating a fork in the chain.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: lastLog, error: lastErr } = await supabase
+        .from('audit_logs')
+        .select('hash')
+        .order('chain_position', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastErr) {
+        console.error('[Audit Error] failed to fetch previous hash', lastErr);
+        return null;
+      }
 
-    if (lastErr) {
-      console.error('[Audit Error] failed to fetch previous hash', lastErr);
-      return null;
+      const prevHash: string = lastLog?.hash || 'GENESIS';
+      const hash = sha256(canonicalPayload(entry, prevHash));
+      const { data, error } = await supabase.rpc('append_audit_log', {
+        p_entity_type: entry.entity_type,
+        p_entity_id: entry.entity_id,
+        p_action: entry.action,
+        p_field_changed: entry.field_changed ?? null,
+        p_old_value: entry.old_value ?? null,
+        p_new_value: entry.new_value ?? null,
+        p_performed_by: entry.performed_by,
+        p_ip_address: entry.ip_address ?? null,
+        p_user_agent: entry.user_agent ?? null,
+        p_metadata: entry.metadata || {},
+        p_prev_hash: prevHash,
+        p_hash: hash,
+      });
+
+      if (!error) return Array.isArray(data) ? data[0] ?? null : data;
+      if (error.code !== '40001') {
+        console.error('[Audit Error] failed to append audit log', error);
+        return null;
+      }
     }
-
-    const prevHash: string = lastLog?.hash || 'GENESIS';
-    const hash = sha256(canonicalPayload(entry, prevHash));
-
-    const { data, error } = await supabase
-      .from('audit_logs')
-      .insert({
-        ...entry,
-        metadata: entry.metadata || {},
-        prev_hash: prevHash,
-        hash,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[Audit Error] failed to insert audit log', error);
-      return null;
-    }
-
-    return data;
+    console.error('[Audit Error] append retries exhausted due to concurrent chain updates');
+    return null;
   } catch (err) {
     console.error('[Audit Error]', err);
     return null;
@@ -132,6 +140,7 @@ interface AuditRow {
   prev_hash: string;
   hash: string;
   created_at: string;
+  chain_position: number;
 }
 
 /**
@@ -148,27 +157,25 @@ export async function verifyAuditChain(
   entityId?: string
 ): Promise<{ valid: boolean; broken_at?: string; total_checked: number; reason?: string }> {
   try {
-    let query = supabase
-      .from('audit_logs')
-      .select(
-        'id, entity_type, entity_id, action, field_changed, old_value, new_value, performed_by, metadata, prev_hash, hash, created_at'
-      )
-      .order('created_at', { ascending: true });
+    const pageSize = 1000;
+    const rows: AuditRow[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      let query = supabase
+        .from('audit_logs')
+        .select(
+          'id, entity_type, entity_id, action, field_changed, old_value, new_value, performed_by, metadata, prev_hash, hash, created_at, chain_position'
+        )
+        .order('chain_position', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (entityType) query = query.eq('entity_type', entityType);
+      if (entityId) query = query.eq('entity_id', entityId);
 
-    if (entityType) {
-      query = query.eq('entity_type', entityType);
+      const { data, error } = await query;
+      if (error) return { valid: false, total_checked: rows.length, reason: error.message };
+      const page = (data || []) as AuditRow[];
+      rows.push(...page);
+      if (page.length < pageSize) break;
     }
-    if (entityId) {
-      query = query.eq('entity_id', entityId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      return { valid: false, total_checked: 0, reason: error.message };
-    }
-
-    const rows = (data || []) as AuditRow[];
 
     if (rows.length === 0) {
       return { valid: true, total_checked: 0 };
@@ -200,7 +207,7 @@ export async function verifyAuditChain(
             reason: 'broken hash link',
           };
         }
-      } else {
+      } else if (assertGenesis) {
         if (row.prev_hash !== rows[i - 1].hash) {
           return {
             valid: false,

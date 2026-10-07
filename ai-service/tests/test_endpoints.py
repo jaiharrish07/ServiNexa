@@ -10,6 +10,9 @@ Run from ai-service/:  python -m pytest -q
 from __future__ import annotations
 
 import json
+import os
+
+os.environ.setdefault("AI_SERVICE_TOKEN", "test-only-internal-ai-token-32chars")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +22,7 @@ import pipeline
 from main import app
 from rate_limiter import limiter
 
-client = TestClient(app)
+client = TestClient(app, headers={"X-AI-Service-Token": os.environ["AI_SERVICE_TOKEN"]})
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +55,14 @@ def test_ready_reports_budget():
     r = client.get("/health/ready")
     assert r.status_code == 200
     assert "budget" in r.json()
+
+
+def test_ai_routes_reject_missing_or_invalid_internal_token():
+    unauthenticated = TestClient(app)
+    assert unauthenticated.post("/ai/classify-request", json={"description": "leak"}).status_code == 401
+    assert TestClient(app, headers={"X-AI-Service-Token": "wrong-token"}).post(
+        "/ai/classify-request", json={"description": "leak"}
+    ).status_code == 401
 
 
 # ─────────────────────────── stub-fallback contract ───────────────────────────

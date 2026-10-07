@@ -27,6 +27,17 @@ const part = (over: Record<string, any> = {}) => ({
   ...over,
 });
 
+function seedReservationWorld(user: ReturnType<typeof seedUser>, p: ReturnType<typeof part>) {
+  const technicianId = randomUUID();
+  const requestId = randomUUID();
+  const workOrderId = randomUUID();
+  seedTable('technicians', [{ id: technicianId, user_id: user.id, site_id: SITE, is_available: true }]);
+  seedTable('service_requests', [{ id: requestId, requester_id: randomUUID(), site_id: SITE, assigned_technician_id: technicianId, status: 'ASSIGNED' }]);
+  seedTable('work_orders', [{ id: workOrderId, service_request_id: requestId, technician_id: technicianId, status: 'PENDING' }]);
+  seedTable('spare_parts', [p]);
+  return workOrderId;
+}
+
 describe('spare-parts', () => {
   it('401 without a token', async () => {
     await request(app).get('/api/spare-parts').expect(401);
@@ -60,26 +71,26 @@ describe('spare-parts', () => {
   it('reserve: happy path decrements stock and creates a reservation', async () => {
     const u = seedUser('TECHNICIAN');
     const p = part({ quantity_available: 10, quantity_reserved: 0 });
-    seedTable('spare_parts', [p]);
+    const workOrderId = seedReservationWorld(u, p);
     const res = await request(app)
       .post(`/api/spare-parts/${p.id}/reserve`)
       .set('Authorization', u.bearer)
-      .send({ work_order_id: randomUUID(), quantity: 4 })
+      .send({ work_order_id: workOrderId, quantity: 4 })
       .expect(201);
     expect(res.body.reservation.quantity).toBe(4);
     expect(getTable('spare_parts')[0].quantity_reserved).toBe(4);
     expect(getTable('reservations')).toHaveLength(1);
   });
 
-  it('reserve: insufficient stock → 400, nothing changes', async () => {
+  it('reserve: insufficient stock → 409, nothing changes', async () => {
     const u = seedUser('TECHNICIAN');
     const p = part({ quantity_available: 5, quantity_reserved: 3 }); // only 2 available
-    seedTable('spare_parts', [p]);
+    const workOrderId = seedReservationWorld(u, p);
     await request(app)
       .post(`/api/spare-parts/${p.id}/reserve`)
       .set('Authorization', u.bearer)
-      .send({ work_order_id: randomUUID(), quantity: 3 })
-      .expect(400);
+      .send({ work_order_id: workOrderId, quantity: 3 })
+      .expect(409);
     expect(getTable('spare_parts')[0].quantity_reserved).toBe(3);
     expect(getTable('reservations')).toHaveLength(0);
   });
@@ -87,22 +98,39 @@ describe('spare-parts', () => {
   it('reserve: two SEQUENTIAL reserves of 3 → reserved=6, 2 reservations (no lost update)', async () => {
     const u = seedUser('TECHNICIAN');
     const p = part({ quantity_available: 10, quantity_reserved: 0 });
-    seedTable('spare_parts', [p]);
-    await request(app).post(`/api/spare-parts/${p.id}/reserve`).set('Authorization', u.bearer).send({ work_order_id: randomUUID(), quantity: 3 }).expect(201);
-    await request(app).post(`/api/spare-parts/${p.id}/reserve`).set('Authorization', u.bearer).send({ work_order_id: randomUUID(), quantity: 3 }).expect(201);
+    const firstWorkOrder = seedReservationWorld(u, p);
+    const secondWorkOrder = randomUUID();
+    seedTable('work_orders', [{ id: secondWorkOrder, service_request_id: getTable('work_orders')[0].service_request_id, technician_id: getTable('work_orders')[0].technician_id, status: 'PENDING' }]);
+    await request(app).post(`/api/spare-parts/${p.id}/reserve`).set('Authorization', u.bearer).send({ work_order_id: firstWorkOrder, quantity: 3 }).expect(201);
+    await request(app).post(`/api/spare-parts/${p.id}/reserve`).set('Authorization', u.bearer).send({ work_order_id: secondWorkOrder, quantity: 3 }).expect(201);
     expect(getTable('spare_parts')[0].quantity_reserved).toBe(6);
     expect(getTable('reservations')).toHaveLength(2);
   });
 
-  it('reserve: two PARALLEL reserves of 3 → reserved=6 (optimistic retry converges)', async () => {
+  it('reserve: two PARALLEL reserves of 3 → reserved=6 (transactional row lock serializes)', async () => {
     const u = seedUser('TECHNICIAN');
     const p = part({ quantity_available: 10, quantity_reserved: 0 });
-    seedTable('spare_parts', [p]);
+    const workOrderId = seedReservationWorld(u, p);
     const fire = () =>
-      request(app).post(`/api/spare-parts/${p.id}/reserve`).set('Authorization', u.bearer).send({ work_order_id: randomUUID(), quantity: 3 });
+      request(app).post(`/api/spare-parts/${p.id}/reserve`).set('Authorization', u.bearer).send({ work_order_id: workOrderId, quantity: 3 });
     const results = await Promise.all([fire(), fire()]);
     expect(results.every((r) => r.status === 201)).toBe(true);
     expect(getTable('spare_parts')[0].quantity_reserved).toBe(6);
     expect(getTable('reservations')).toHaveLength(2);
+  });
+
+  it('reserve: rejects a part from a different site without changing stock', async () => {
+    const u = seedUser('TECHNICIAN');
+    const p = part({ site_id: randomUUID() });
+    const workOrderId = seedReservationWorld(u, p);
+    const requestRow = getTable('service_requests')[0];
+    requestRow.site_id = SITE;
+    await request(app)
+      .post(`/api/spare-parts/${p.id}/reserve`)
+      .set('Authorization', u.bearer)
+      .send({ work_order_id: workOrderId, quantity: 1 })
+      .expect(400);
+    expect(getTable('spare_parts')[0].quantity_reserved).toBe(0);
+    expect(getTable('reservations')).toHaveLength(0);
   });
 });

@@ -72,16 +72,27 @@ async function main() {
   check('POST /api/service-requests', sr.status === 201 && /^SR-\d{8}-\d{3}$/.test(sr.json?.service_request?.request_number), sr.json?.service_request?.request_number);
   const srId = sr.json?.service_request?.id;
 
+  const assignedTechId = techs.json?.technicians?.[0]?.id;
+  let readyForWorkOrder = Boolean(srId && assignedTechId);
+  for (const status of ['SUBMITTED', 'VALIDATING', 'PENDING_APPROVAL', 'APPROVED', 'ASSIGNED']) {
+    const body = status === 'ASSIGNED' ? { status, technician_id: assignedTechId } : { status };
+    const transition = await api('POST', `/api/service-requests/${srId}/transition`, body);
+    const passed = transition.status === 200;
+    check(`POST /api/service-requests/:id/transition → ${status}`, passed, `status ${transition.status}`);
+    readyForWorkOrder = readyForWorkOrder && passed;
+    if (!passed) break;
+  }
+
   const list = await api('GET', '/api/service-requests?limit=2&page=1');
   check('GET /api/service-requests (pagination meta)', list.status === 200 && !!list.json?.meta, `total ${list.json?.meta?.total}`);
 
-  const wo = await api('POST', '/api/work-orders', {
+  const wo = readyForWorkOrder ? await api('POST', '/api/work-orders', {
     service_request_id: srId,
-    technician_id: techs.json?.technicians?.[0]?.id,
+    technician_id: assignedTechId,
     description: 'Replace hydraulic seal kit',
     estimated_hours: 3,
-  });
-  check('POST /api/work-orders', wo.status === 201, wo.json?.work_order?.order_number);
+  }) : { status: 424, json: {} };
+  check('POST /api/work-orders', wo.status === 201, wo.json?.work_order?.order_number ?? 'requires successful assignment');
 
   const parts = await api('GET', `/api/spare-parts?site_id=${siteA?.id ?? ''}`);
   const hs = parts.json?.spare_parts?.find((p: any) => p.part_number === 'HS-100');

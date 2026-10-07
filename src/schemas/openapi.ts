@@ -4,7 +4,7 @@ import swaggerUi from 'swagger-ui-express';
 /**
  * Self-contained OpenAPI 3.0 document for the DQBH API.
  * Served at GET /api/docs (interactive) and GET /api/docs.json (raw).
- * Dev B endpoints are live; Dev A endpoints are documented and tagged "Dev A (after merge)".
+ * ServiNexa integrated backend API; this document includes the Phase B routes.
  */
 
 const bearer = [{ bearerAuth: [] as string[] }];
@@ -39,8 +39,7 @@ export const openApiDocument = {
     title: 'DQBH API',
     version: '0.1.0',
     description:
-      'Industrial Equipment Activity Management platform. Dev B slice: auth, CRUD, notifications, reports. ' +
-      'Dev A endpoints (workflow transitions, AI, audit chain) appear after merge.',
+      'Industrial Equipment Activity Management platform: auth, scoped CRUD, workflow, AI, audit, bidding, parts, diagnosis, and reports.',
   },
   servers: [{ url: '/', description: 'current host' }],
   tags: [
@@ -55,6 +54,7 @@ export const openApiDocument = {
     { name: 'Reports' },
     { name: 'Health' },
     { name: 'Dev A (after merge)' },
+    { name: 'Phase B Features' },
   ],
   components: {
     securitySchemes: {
@@ -190,7 +190,6 @@ export const openApiDocument = {
                   email: { type: 'string' },
                   password: { type: 'string' },
                   full_name: { type: 'string' },
-                  role: { type: 'string' },
                   phone: { type: 'string' },
                 },
               },
@@ -296,6 +295,38 @@ export const openApiDocument = {
     },
     '/api/audit/verify': {
       get: { tags: ['Dev A (after merge)'], summary: 'Verify tamper-evident chain', responses: { 200: resp('Verification') } },
+    },
+    '/api/visual-diagnoses': {
+      post: { tags: ['Phase B Features'], summary: 'Create diagnosis for an accessible request (OPS/ADMIN)', responses: { 201: resp('Created') } },
+    },
+    '/api/visual-diagnoses/{requestId}': {
+      get: { tags: ['Phase B Features'], summary: 'Read diagnosis for an accessible request', parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Diagnosis'), 404: resp('Not found') } },
+    },
+    '/api/impact-analysis/{requestId}': {
+      post: { tags: ['Phase B Features'], summary: 'Calculate cascading impact', parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Impact') } },
+      get: { tags: ['Phase B Features'], summary: 'Read latest impact analysis', parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Impact') } },
+    },
+    '/api/parts-sourcing/{requestId}': {
+      post: { tags: ['Phase B Features'], summary: 'Source parts for an accessible request', parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Sourcing matrix') } },
+      get: { tags: ['Phase B Features'], summary: 'Read parts sourcing matrix', parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Sourcing matrix') } },
+    },
+    '/api/bid-rounds/{requestId}/open': {
+      post: { tags: ['Phase B Features'], summary: 'Open a bidding round (OPS/ADMIN)', parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Bid round') } },
+    },
+    '/api/bids/submit': {
+      post: { tags: ['Phase B Features'], summary: 'Submit a bid (assigned technician)', responses: { 201: resp('Bid') } },
+    },
+    '/api/bids/{requestId}/score': {
+      post: { tags: ['Phase B Features'], summary: 'Score bids (OPS/ADMIN)', parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Ranked bids') } },
+    },
+    '/api/bids/{bidId}/accept': {
+      put: { tags: ['Phase B Features'], summary: 'Accept a bid (OPS/ADMIN)', parameters: [{ name: 'bidId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Accepted bid and staging') } },
+    },
+    '/api/staging/{requestId}': {
+      get: { tags: ['Phase B Features'], summary: 'Read staging records for an accessible request', parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: resp('Staging records') } },
+    },
+    '/api/knowledge/search': {
+      get: { tags: ['Phase B Features'], summary: 'Search resolved repair knowledge', responses: { 200: resp('Matching cases') } },
     },
   },
 } as const;

@@ -32,6 +32,7 @@ GROQ_DAILY_REQUESTS = _int("GROQ_DAILY_REQUESTS", 1000)
 GROQ_DAILY_TOKENS = _int("GROQ_DAILY_TOKENS", 200_000)
 
 PORT = _int("PORT", 8000)
+AI_SERVICE_TOKEN = os.environ.get("AI_SERVICE_TOKEN", "")
 # Comma-separated allowlist; "*" (default) is fine because the only caller is the
 # trusted Express backend on a private network.
 CORS_ORIGINS = os.environ.get("AI_CORS_ORIGINS", "*")

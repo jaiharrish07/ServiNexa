@@ -327,9 +327,8 @@ $$ LANGUAGE sql;
 
 
 -- === 16. ROW LEVEL SECURITY ===
--- Enable RLS on every table. For the hackathon we add a single permissive
--- policy per table so the service role / authenticated access works without
--- per-role rules. Tighten these before any production use.
+-- Enable RLS on every table. The API uses the server-side service role; there
+-- are no broad policies for anon/authenticated clients.
 ALTER TABLE public.users            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sites            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.machines         ENABLE ROW LEVEL SECURITY;
@@ -344,40 +343,40 @@ ALTER TABLE public.audit_logs       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications    ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Service role full access" ON public.users;
-CREATE POLICY "Service role full access" ON public.users            FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.users            FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.sites;
-CREATE POLICY "Service role full access" ON public.sites            FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.sites            FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.machines;
-CREATE POLICY "Service role full access" ON public.machines         FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.machines         FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.technicians;
-CREATE POLICY "Service role full access" ON public.technicians      FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.technicians      FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.service_requests;
-CREATE POLICY "Service role full access" ON public.service_requests FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.service_requests FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.work_orders;
-CREATE POLICY "Service role full access" ON public.work_orders      FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.work_orders      FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.spare_parts;
-CREATE POLICY "Service role full access" ON public.spare_parts      FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.spare_parts      FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.reservations;
-CREATE POLICY "Service role full access" ON public.reservations     FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.reservations     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.exception_flags;
-CREATE POLICY "Service role full access" ON public.exception_flags  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.exception_flags  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.documents;
-CREATE POLICY "Service role full access" ON public.documents        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.documents        FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.audit_logs;
-CREATE POLICY "Service role full access" ON public.audit_logs       FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.audit_logs       FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role full access" ON public.notifications;
-CREATE POLICY "Service role full access" ON public.notifications    FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON public.notifications    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 
 -- ============================================================================

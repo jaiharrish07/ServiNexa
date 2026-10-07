@@ -3,7 +3,7 @@ import request from 'supertest';
 
 vi.mock('../src/config/supabase', async () => {
   const mock = await import('./_mocks/supabase');
-  return { supabase: mock.mockSupabase, supabaseAnonUrl: 'http://x', supabaseAnonKey: 'anon' };
+  return { supabase: mock.mockSupabase, createAuthClient: () => mock.mockSupabase, supabaseAnonUrl: 'http://x', supabaseAnonKey: 'anon' };
 });
 
 import authRouter from '../src/routes/auth.routes';
@@ -21,6 +21,16 @@ describe('auth', () => {
       .expect(201);
     expect(res.body.user.email).toBe('new@dqbh.com');
     expect(getTable('users')).toHaveLength(1);
+    expect(getTable('users')[0].role).toBe('CUSTOMER');
+  });
+
+  it('cannot self-assign a privileged role during public signup', async () => {
+    const res = await request(app)
+      .post('/api/auth/signup')
+      .send({ email: 'attacker@dqbh.com', password: 'password123', full_name: 'Attacker', role: 'ADMIN' })
+      .expect(201);
+    expect(res.body.user.role).toBe('CUSTOMER');
+    expect(getTable('users')[0].role).toBe('CUSTOMER');
   });
 
   it('rejects a short password with 400', async () => {
@@ -69,5 +79,11 @@ describe('auth', () => {
     const res = await request(app).get('/api/auth/me').set('Authorization', admin.bearer).expect(200);
     expect(res.body.user.email).toBe('me@dqbh.com');
     expect(res.body.user.role).toBe('ADMIN');
+  });
+
+  it('rejects an inactive profile even when the Supabase token is valid', async () => {
+    const inactive = seedUser('CUSTOMER');
+    getTable('users')[0].is_active = false;
+    await request(app).get('/api/auth/me').set('Authorization', inactive.bearer).expect(401);
   });
 });

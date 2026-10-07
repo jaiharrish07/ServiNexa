@@ -1,11 +1,15 @@
 import { Router, Response } from 'express';
 import { supabase } from '../config/supabase';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { callAIService } from '../services/ai-client';
 import { classifyStub } from '../ai-stubs/classify.stub';
 import { predictStub } from '../ai-stubs/predict.stub';
 import { matchStub } from '../ai-stubs/match.stub';
 import { diagnosisStub } from '../ai-stubs/diagnosis.stub';
+import { validate } from '../middleware/validate';
+import { aiAnomaliesSchema, aiClassifySchema, aiDiagnosisSchema, aiMatchSchema, aiPredictSchema } from '../schemas/features';
+import { canAccessSite } from '../utils/access';
+import { hasTechnicianCapacity } from '../utils/technician';
 
 const router = Router();
 
@@ -17,6 +21,7 @@ const router = Router();
 router.post(
   '/classify',
   authenticate,
+  validate({ body: aiClassifySchema }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { description } = req.body ?? {};
@@ -48,6 +53,7 @@ router.post(
 router.post(
   '/predict',
   authenticate,
+  validate({ body: aiPredictSchema }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { machine_id } = req.body ?? {};
@@ -58,7 +64,7 @@ router.post(
       const { data: machine, error } = await supabase
         .from('machines')
         .select(
-          'air_temp, process_temp, rotational_speed, torque, tool_wear, code, name'
+          'air_temp, process_temp, rotational_speed, torque, tool_wear, code, name, site_id'
         )
         .eq('id', machine_id)
         .single();
@@ -66,13 +72,14 @@ router.post(
       if (error || !machine) {
         return res.status(404).json({ error: 'Machine not found' });
       }
+      if (!await canAccessSite(machine.site_id, req.user!)) return res.status(404).json({ error: 'Machine not found' });
 
       const sensorData = {
-        air_temp: machine.air_temp || 25,
-        process_temp: machine.process_temp || 35,
-        rotational_speed: machine.rotational_speed || 1500,
-        torque: machine.torque || 40,
-        tool_wear: machine.tool_wear || 100,
+        air_temp: machine.air_temp ?? 25,
+        process_temp: machine.process_temp ?? 35,
+        rotational_speed: machine.rotational_speed ?? 1500,
+        torque: machine.torque ?? 40,
+        tool_wear: machine.tool_wear ?? 100,
       };
 
       const aiResult = await callAIService<Record<string, unknown>>(
@@ -104,7 +111,7 @@ router.post(
  * POST /match
  * Rank available technicians for a given service request.
  */
-router.post('/match', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/match', authenticate, authorize('ADMIN', 'OPS_MANAGER'), validate({ body: aiMatchSchema }), async (req: AuthRequest, res: Response) => {
   try {
     const { service_request_id } = req.body ?? {};
     if (!service_request_id) {
@@ -130,7 +137,8 @@ router.post('/match', authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(500).json({ error: techError.message });
     }
 
-    if (!technicians || technicians.length === 0) {
+    const eligibleTechnicians = (technicians ?? []).filter(hasTechnicianCapacity);
+    if (eligibleTechnicians.length === 0) {
       return res.json({
         ranked_technicians: [],
         message: 'No available technicians',
@@ -139,7 +147,7 @@ router.post('/match', authenticate, async (req: AuthRequest, res: Response) => {
 
     const payload = {
       request: sr,
-      technicians: technicians.map((t: any) => ({
+      technicians: eligibleTechnicians.map((t: any) => ({
         id: t.id,
         employee_code: t.employee_code,
         name: t.users?.full_name,
@@ -162,7 +170,7 @@ router.post('/match', authenticate, async (req: AuthRequest, res: Response) => {
       return res.json({ ...aiResult.data, source: 'ai' });
     }
 
-    const stub = matchStub(technicians, sr);
+    const stub = matchStub(eligibleTechnicians, sr);
     return res.json({ ...stub, source: 'stub' });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -177,6 +185,8 @@ router.post('/match', authenticate, async (req: AuthRequest, res: Response) => {
 router.post(
   '/anomalies',
   authenticate,
+  authorize('ADMIN', 'OPS_MANAGER'),
+  validate({ body: aiAnomaliesSchema }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { site_id } = req.body ?? {};
@@ -221,7 +231,7 @@ router.post(
  * 3D visual-diagnosis analysis — identify the affected component + a remote
  * diagnostic brief. Live-first with a rule-based stub fallback.
  */
-router.post('/analyze-diagnosis', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/analyze-diagnosis', authenticate, validate({ body: aiDiagnosisSchema }), async (req: AuthRequest, res: Response) => {
   try {
     const { machine_type, sub_category, sensor_data, machine_history } = req.body ?? {};
     if (!machine_type) {

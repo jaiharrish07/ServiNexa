@@ -311,6 +311,107 @@ export const mockSupabase = {
   },
   // Postgres RPCs used by Dev A's workflow engine (atomic technician job-count).
   async rpc(fn: string, args: Record<string, any> = {}) {
+    if (fn === 'accept_solution_bid') {
+      const bid = getTable('solution_bids').find((r) => r.id === args.p_bid_id);
+      if (!bid) return { data: null, error: { code: 'P0002', message: 'Bid not found' } };
+      const serviceRequest = getTable('service_requests').find((r) => r.id === bid.service_request_id);
+      if (!serviceRequest) return { data: null, error: { code: 'P0002', message: 'Service request not found' } };
+      if (serviceRequest.status !== 'BID_REVIEW') return { data: null, error: { code: '40001', message: 'Request is not in bid review' } };
+      const round = getTable('bid_rounds').find((r) => r.id === bid.bid_round_id && r.status === 'OPEN');
+      if (!round) return { data: null, error: { code: '40001', message: 'Open bid round not found' } };
+      const technician = getTable('technicians').find((r) => r.id === bid.technician_id);
+      if (!technician || technician.is_available === false || (technician.current_job_count ?? 0) >= (technician.max_concurrent_jobs ?? 3)) {
+        return { data: null, error: { code: '23514', message: 'Winning technician unavailable or at capacity' } };
+      }
+      for (const row of getTable('solution_bids').filter((r) => r.service_request_id === serviceRequest.id)) {
+        row.status = row.id === bid.id ? 'ACCEPTED' : 'REJECTED';
+      }
+      round.status = 'DECIDED';
+      round.winning_bid_id = bid.id;
+      round.closed_at = nowIso();
+      technician.current_job_count = (technician.current_job_count ?? 0) + 1;
+      Object.assign(serviceRequest, {
+        selected_bid_id: bid.id,
+        status: 'ASSIGNED',
+        assigned_technician_id: bid.technician_id,
+        assigned_at: nowIso(),
+        updated_at: nowIso(),
+      });
+      return { data: clone({ bid, service_request: serviceRequest }), error: null };
+    }
+    if (fn === 'reserve_spare_part') {
+      const part = getTable('spare_parts').find((r) => r.id === args.p_spare_part_id);
+      if (!part) return { data: null, error: { code: 'P0002', message: 'Spare part not found' } };
+      const workOrder = getTable('work_orders').find((r) => r.id === args.p_work_order_id);
+      if (!workOrder) return { data: null, error: { code: 'P0002', message: 'Work order not found' } };
+      const serviceRequest = getTable('service_requests').find((r) => r.id === workOrder.service_request_id);
+      if (!serviceRequest) return { data: null, error: { code: 'P0002', message: 'Work order not found' } };
+      if (part.site_id !== serviceRequest.site_id) {
+        return { data: null, error: { code: '23514', message: 'Part and work order must belong to the same site' } };
+      }
+      const quantity = args.p_quantity;
+      if (!Number.isInteger(quantity) || quantity <= 0) return { data: null, error: { code: '22023', message: 'Quantity must be positive' } };
+      if ((part.quantity_available ?? 0) - (part.quantity_reserved ?? 0) < quantity) {
+        return { data: null, error: { code: '23514', message: 'Insufficient stock' } };
+      }
+      part.quantity_reserved = (part.quantity_reserved ?? 0) + quantity;
+      const reservation = {
+        id: randomUUID(),
+        spare_part_id: part.id,
+        work_order_id: workOrder.id,
+        quantity,
+        status: 'RESERVED',
+        created_at: nowIso(),
+      };
+      getTable('reservations').push(reservation);
+      return { data: clone(reservation), error: null };
+    }
+    if (fn === 'create_work_order_for_assigned_request') {
+      const serviceRequest = getTable('service_requests').find((r) => r.id === args.p_service_request_id);
+      if (!serviceRequest) return { data: null, error: { code: 'P0002', message: 'Service request not found' } };
+      if (serviceRequest.status !== 'ASSIGNED' || serviceRequest.assigned_technician_id !== args.p_technician_id) {
+        return { data: null, error: { code: '23514', message: 'Work order requires the assigned technician on an ASSIGNED request' } };
+      }
+      const workOrder = {
+        id: randomUUID(),
+        order_number: args.p_order_number,
+        service_request_id: args.p_service_request_id,
+        technician_id: args.p_technician_id,
+        description: args.p_description,
+        estimated_hours: args.p_estimated_hours,
+        actual_hours: args.p_actual_hours,
+        notes: args.p_notes,
+        status: 'PENDING',
+        created_at: nowIso(),
+      };
+      getTable('work_orders').push(workOrder);
+      return { data: clone(workOrder), error: null };
+    }
+    if (fn === 'transition_service_request') {
+      const request = getTable('service_requests').find((r) => r.id === args.p_request_id);
+      if (!request) return { data: null, error: { code: 'P0002', message: 'Service request not found' } };
+      if (request.status !== args.p_expected_status) {
+        return { data: null, error: { code: '40001', message: 'Request status changed concurrently' } };
+      }
+      const payload = args.p_payload ?? {};
+      const oldTech = request.assigned_technician_id;
+      const nextTech = Object.prototype.hasOwnProperty.call(payload, 'assigned_technician_id') ? payload.assigned_technician_id : oldTech;
+      const wasActive = ['ASSIGNED', 'IN_PROGRESS', 'EXCEPTION'].includes(request.status);
+      const willBeActive = ['ASSIGNED', 'IN_PROGRESS', 'EXCEPTION'].includes(payload.status);
+      if (wasActive && (!willBeActive || nextTech !== oldTech) && oldTech) {
+        const old = getTable('technicians').find((r) => r.id === oldTech);
+        if (old) old.current_job_count = Math.max(0, (old.current_job_count ?? 0) - 1);
+      }
+      if (willBeActive && (!wasActive || nextTech !== oldTech)) {
+        const tech = getTable('technicians').find((r) => r.id === nextTech);
+        if (!tech || tech.is_available === false || (tech.current_job_count ?? 0) >= (tech.max_concurrent_jobs ?? 3)) {
+          return { data: null, error: { code: '23514', message: 'Technician unavailable or at capacity' } };
+        }
+        tech.current_job_count = (tech.current_job_count ?? 0) + 1;
+      }
+      Object.assign(request, payload, { updated_at: nowIso() });
+      return { data: clone(request), error: null };
+    }
     if (fn === 'increment_job_count' || fn === 'decrement_job_count') {
       const tech = getTable('technicians').find((r) => r.id === args.tech_id);
       if (tech) {
@@ -318,6 +419,32 @@ export const mockSupabase = {
         tech.current_job_count = fn === 'increment_job_count' ? cur + 1 : Math.max(0, cur - 1);
       }
       return { data: null, error: null };
+    }
+    if (fn === 'append_audit_log') {
+      const rows = getTable('audit_logs');
+      const latest = [...rows].sort((a, b) => (b.chain_position ?? 0) - (a.chain_position ?? 0))[0];
+      if ((latest?.hash ?? 'GENESIS') !== args.p_prev_hash) {
+        return { data: null, error: { code: '40001', message: 'Audit chain advanced; retry append' } };
+      }
+      const inserted = {
+        id: randomUUID(),
+        entity_type: args.p_entity_type,
+        entity_id: args.p_entity_id,
+        action: args.p_action,
+        field_changed: args.p_field_changed,
+        old_value: args.p_old_value,
+        new_value: args.p_new_value,
+        performed_by: args.p_performed_by,
+        ip_address: args.p_ip_address,
+        user_agent: args.p_user_agent,
+        metadata: args.p_metadata ?? {},
+        prev_hash: args.p_prev_hash,
+        hash: args.p_hash,
+        chain_position: rows.reduce((m, r) => Math.max(m, r.chain_position ?? 0), 0) + 1,
+        created_at: nowIso(),
+      };
+      rows.push(inserted);
+      return { data: clone(inserted), error: null };
     }
     return { data: null, error: { code: 'MOCK_ERR', message: `unknown rpc ${fn}` } };
   },

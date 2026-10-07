@@ -6,6 +6,9 @@ import { transitionStatus, TransitionResult } from './workflow';
 import { createNotifications } from './notifications';
 import { NotificationInput } from '../schemas/notifications';
 import { planStaging } from './staging.service';
+import { notifyStatusChange } from './notifications';
+import { createAuditLog } from './audit';
+import { hasTechnicianCapacity } from '../utils/technician';
 
 /**
  * Collaborative bidding (Feature 4). APPROVED → BIDDING → BID_REVIEW → BID_ACCEPTED
@@ -19,18 +22,22 @@ export async function openBidding(
   userId: string,
   userRole: string
 ): Promise<TransitionResult & { bid_round?: any; invited?: any[] }> {
-  const { data: sr } = await supabase.from('service_requests').select('*').eq('id', serviceRequestId).single();
+  const { data: sr, error: requestError } = await supabase.from('service_requests').select('*').eq('id', serviceRequestId).single();
+  if (requestError) return { success: false, error: requestError.message, code: 'DB_ERROR' };
   if (!sr) return { success: false, error: 'Service request not found', code: 'NOT_FOUND' };
+  if (sr.status !== 'APPROVED') return { success: false, error: `Cannot open bidding while request is ${sr.status}`, code: 'INVALID_TRANSITION' };
 
-  const t = await transitionStatus(serviceRequestId, 'BIDDING', userId, userRole);
-  if (!t.success) return t;
-
-  const { data: techs } = await supabase
+  const { data: techs, error: techError } = await supabase
     .from('technicians')
     .select('*, users(full_name)')
     .eq('is_available', true);
+  if (techError) return { success: false, error: techError.message, code: 'DB_ERROR' };
 
-  const techList = (techs ?? []).map((x: any) => ({
+  const eligibleTechs = (techs ?? []).filter(hasTechnicianCapacity);
+  if (eligibleTechs.length === 0) {
+    return { success: false, error: 'No available technicians have capacity for this request', code: 'CONFLICT' };
+  }
+  const techList = eligibleTechs.map((x: any) => ({
     id: x.id,
     employee_code: x.employee_code,
     name: x.users?.full_name,
@@ -45,10 +52,14 @@ export async function openBidding(
   }));
 
   const ai = await callAIService<any>('/ai/match-technician', { request: sr, technicians: techList });
-  const ranked = ai.data?.ranked_technicians ?? matchStub(techs ?? [], sr).ranked_technicians;
+  const eligibleIds = new Set(eligibleTechs.map((tech: any) => tech.id));
+  const aiRanked = Array.isArray(ai.data?.ranked_technicians)
+    ? ai.data.ranked_technicians.filter((candidate: any) => eligibleIds.has(candidate.technician_id))
+    : [];
+  const ranked = aiRanked.length ? aiRanked : matchStub(eligibleTechs, sr).ranked_technicians;
   const top = ranked.slice(0, topN || 3);
 
-  const { data: round } = await supabase
+  const { data: round, error: roundError } = await supabase
     .from('bid_rounds')
     .insert({
       service_request_id: serviceRequestId,
@@ -57,9 +68,16 @@ export async function openBidding(
     })
     .select()
     .single();
+  if (roundError || !round) return { success: false, error: roundError?.message ?? 'Could not create bid round', code: 'DB_ERROR' };
+
+  const t = await transitionStatus(serviceRequestId, 'BIDDING', userId, userRole);
+  if (!t.success) {
+    await supabase.from('bid_rounds').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('id', round.id);
+    return t;
+  }
 
   const techById: Record<string, any> = {};
-  for (const x of techs ?? []) techById[x.id] = x;
+  for (const x of eligibleTechs) techById[x.id] = x;
   const notes: NotificationInput[] = [];
   for (const r of top) {
     const tech = techById[r.technician_id];
@@ -84,18 +102,21 @@ export async function scoreBids(
   userId: string,
   userRole: string
 ): Promise<TransitionResult & { ranked_bids?: any[] }> {
-  const { data: bids } = await supabase
+  const { data: bids, error: bidError } = await supabase
     .from('solution_bids')
     .select('*, technicians(success_rate)')
     .eq('service_request_id', serviceRequestId);
 
+  if (bidError) return { success: false, error: bidError.message, code: 'DB_ERROR' };
   if (!bids || bids.length === 0) return { success: false, error: 'No bids to score', code: 'NOT_FOUND' };
 
-  const { data: sr } = await supabase
+  const { data: sr, error: srError } = await supabase
     .from('service_requests')
-    .select('category, priority')
+    .select('category, priority, status')
     .eq('id', serviceRequestId)
     .single();
+  if (srError || !sr) return { success: false, error: srError?.message ?? 'Service request not found', code: 'NOT_FOUND' };
+  if (sr.status !== 'BIDDING') return { success: false, error: `Cannot score bids while request is ${sr.status}`, code: 'INVALID_TRANSITION' };
 
   const bidPayload = bids.map((b: any) => ({
     bid_id: b.id,
@@ -117,10 +138,11 @@ export async function scoreBids(
   const source = ai.data ? 'ai' : 'stub';
 
   for (const sb of scored.ranked_bids ?? []) {
-    await supabase
+    const { error } = await supabase
       .from('solution_bids')
       .update({ ai_score: { ...sb, source }, status: 'UNDER_REVIEW' })
       .eq('id', sb.bid_id);
+    if (error) return { success: false, error: error.message, code: 'DB_ERROR' };
   }
 
   const t = await transitionStatus(serviceRequestId, 'BID_REVIEW', userId, userRole);
@@ -134,25 +156,28 @@ export async function acceptBid(
   userId: string,
   userRole: string
 ): Promise<TransitionResult & { bid?: any; staging?: any[] }> {
-  const { data: bid } = await supabase.from('solution_bids').select('*').eq('id', bidId).single();
-  if (!bid) return { success: false, error: 'Bid not found', code: 'NOT_FOUND' };
-
+  // One database transaction locks the request, validates BID_REVIEW, accepts
+  // exactly one bid, closes the round, assigns the technician, and updates load.
+  const { data, error } = await supabase.rpc('accept_solution_bid', { p_bid_id: bidId });
+  if (error) {
+    if (error.code === 'P0002') return { success: false, error: error.message, code: 'NOT_FOUND' };
+    if (error.code === '40001') return { success: false, error: error.message, code: 'INVALID_TRANSITION' };
+    if (error.code === '23514') return { success: false, error: error.message, code: 'CONFLICT' };
+    return { success: false, error: error.message, code: 'DB_ERROR' };
+  }
+  const bid = data?.bid;
+  const assignedRequest = data?.service_request;
+  if (!bid || !assignedRequest) return { success: false, error: 'Bid acceptance returned incomplete data', code: 'DB_ERROR' };
   const srId = bid.service_request_id;
 
-  // Reject all, then accept the winner (two updates keep it simple + deterministic).
-  await supabase.from('solution_bids').update({ status: 'REJECTED' }).eq('service_request_id', srId);
-  await supabase.from('solution_bids').update({ status: 'ACCEPTED' }).eq('id', bidId);
-  await supabase
-    .from('bid_rounds')
-    .update({ status: 'DECIDED', winning_bid_id: bidId, closed_at: new Date().toISOString() })
-    .eq('service_request_id', srId);
-  await supabase.from('service_requests').update({ selected_bid_id: bidId }).eq('id', srId);
-
-  // BID_REVIEW → BID_ACCEPTED → ASSIGNED (assigns the winning technician).
-  const t1 = await transitionStatus(srId, 'BID_ACCEPTED', userId, userRole);
-  if (!t1.success) return { ...t1, bid };
-  const t2 = await transitionStatus(srId, 'ASSIGNED', userId, userRole, { technician_id: bid.technician_id });
-  if (!t2.success) return { ...t2, bid };
+  await createAuditLog({ entity_type: 'service_request', entity_id: srId, action: 'STATUS_CHANGE', field_changed: 'status', old_value: 'BID_REVIEW', new_value: 'BID_ACCEPTED', performed_by: userId });
+  await createAuditLog({ entity_type: 'service_request', entity_id: srId, action: 'STATUS_CHANGE', field_changed: 'status', old_value: 'BID_ACCEPTED', new_value: 'ASSIGNED', performed_by: userId, metadata: { technician_id: bid.technician_id } });
+  await createAuditLog({ entity_type: 'solution_bid', entity_id: bidId, action: 'ACCEPT', performed_by: userId, metadata: { service_request_id: srId } });
+  try {
+    await notifyStatusChange(assignedRequest, 'BID_REVIEW', 'ASSIGNED');
+  } catch (e: any) {
+    console.error('[bidding] status notification failed (non-fatal):', e?.message || e);
+  }
 
   // Auto-stage the winning bid's parts (Feature 5).
   const { data: sr } = await supabase.from('service_requests').select('site_id').eq('id', srId).single();
@@ -163,5 +188,5 @@ export async function acceptBid(
     console.error('[bidding] staging failed (non-fatal):', e?.message || e);
   }
 
-  return { success: true, service_request: t2.service_request, bid, staging };
+  return { success: true, service_request: assignedRequest, bid, staging };
 }

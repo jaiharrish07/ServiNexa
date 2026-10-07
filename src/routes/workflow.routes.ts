@@ -1,6 +1,10 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { transitionStatus, raiseException, TransitionResult } from '../services/workflow';
+import { asyncHandler } from '../middleware/error-handler';
+import { validate } from '../middleware/validate';
+import { idParam } from '../schemas/common';
+import { exceptionCreateSchema, workflowTransitionSchema } from '../schemas/features';
 
 const router = Router();
 
@@ -12,16 +16,17 @@ function statusForResult(result: TransitionResult): number {
     case 'FORBIDDEN':
       return 403;
     case 'INVALID_TRANSITION':
+    case 'CONFLICT':
       return 409; // conflict with current state
     case 'DB_ERROR':
-      return 400;
+      return 500;
     default:
       return 400;
   }
 }
 
 // POST /api/service-requests/:id/transition
-router.post('/:id/transition', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/:id/transition', authenticate, validate({ params: idParam, body: workflowTransitionSchema }), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { status, ...metadata } = req.body || {};
 
   if (!status) {
@@ -41,10 +46,10 @@ router.post('/:id/transition', authenticate, async (req: AuthRequest, res: Respo
   }
 
   res.json({ service_request: result.service_request });
-});
+}));
 
 // POST /api/service-requests/:id/exception
-router.post('/:id/exception', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/:id/exception', authenticate, validate({ params: idParam, body: exceptionCreateSchema }), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { type, description, severity } = req.body || {};
 
   if (!type || !description) {
@@ -69,6 +74,6 @@ router.post('/:id/exception', authenticate, async (req: AuthRequest, res: Respon
   }
 
   res.json({ service_request: result.service_request });
-});
+}));
 
 export default router;

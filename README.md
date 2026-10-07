@@ -27,6 +27,7 @@ In `.env`, fill in these values from Supabase Project Settings:
 - `SUPABASE_ANON_KEY`: anon/public key
 - `SUPABASE_SERVICE_KEY`: service role key; keep this server-side and secret
 - `DATABASE_URL`: PostgreSQL URI from Project Settings → Database → Connection string
+- `AI_SERVICE_TOKEN`: a random secret of at least 32 characters; use the same value in the AI service environment
 
 Then apply the schema and load demo records:
 
@@ -35,7 +36,7 @@ npm run db:setup
 npm run seed
 ```
 
-`db:setup` applies [`sql/schema.sql`](sql/schema.sql) with `psql` and stops on the first SQL error. The schema can be safely reapplied. If you do not have `psql`, open the Supabase SQL Editor, run the full contents of `sql/schema.sql`, then run `npm run seed` locally.
+`db:setup` applies [`sql/schema.sql`](sql/schema.sql), [`sql/features.sql`](sql/features.sql), and [`sql/security-hardening.sql`](sql/security-hardening.sql) in order with `psql`, stopping on the first SQL error. The scripts are re-runnable. If you do not have `psql`, run all three files in that order in the Supabase SQL Editor, then run `npm run seed` locally.
 
 Start the API in another terminal:
 
@@ -79,7 +80,8 @@ These are development demo credentials. Do not use them for a public deployment.
 ## Database and security notes
 
 - The Express API connects with the Supabase service role key. Keep it only in the backend environment; never put it in a browser app.
-- The included SQL uses permissive policies intended for the hackathon/demo setup. Review and replace them with per-role and per-site policies before exposing direct Supabase access to clients.
+- RLS is enabled and direct anon/authenticated table access is denied by default. The Express service-role key remains server-side; add narrowly scoped policies before any frontend connects directly to Supabase.
+- The AI service requires `X-AI-Service-Token`; configure the same random `AI_SERVICE_TOKEN` in the backend and AI-service environments. Keep the AI service on a private network.
 - The schema adds operational tables to the `supabase_realtime` publication when it exists. Client subscriptions still need to use Supabase Realtime and appropriate read policies.
 - `DATABASE_URL` is used only by the schema setup script. Runtime API queries use `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`.
 

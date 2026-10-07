@@ -33,11 +33,11 @@ export const authenticate = async (req: AuthRequest, _res: Response, next: NextF
 
     const { data: profile, error: profileError } = await supabase
       .from('users')
-      .select('id, email, full_name, role')
+      .select('id, email, full_name, role, is_active')
       .eq('auth_id', authUser.id)
       .single();
 
-    if (profileError || !profile) return next(unauthorized('User profile not found'));
+    if (profileError || !profile || profile.is_active === false) return next(unauthorized('User profile is inactive or unavailable'));
 
     req.user = profile as AuthRequest['user'];
     return next();

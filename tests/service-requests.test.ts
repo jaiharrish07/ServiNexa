@@ -42,6 +42,27 @@ describe('service-requests', () => {
     expect(res.body.meta.total).toBe(3);
   });
 
+  it('customers see only their own service requests', async () => {
+    const customer = seedUser('CUSTOMER');
+    const owned = sr({ requester_id: customer.id });
+    const privateOther = sr();
+    seedTable('service_requests', [owned, privateOther]);
+    const res = await request(app).get('/api/service-requests').set('Authorization', customer.bearer).expect(200);
+    expect(res.body.service_requests.map((x: any) => x.id)).toEqual([owned.id]);
+    await request(app).get(`/api/service-requests/${privateOther.id}`).set('Authorization', customer.bearer).expect(404);
+    await request(app).patch(`/api/service-requests/${privateOther.id}`).set('Authorization', customer.bearer).send({ title: 'Changed title' }).expect(404);
+  });
+
+  it('customers can edit only their own draft requests', async () => {
+    const customer = seedUser('CUSTOMER');
+    const owned = sr({ requester_id: customer.id });
+    seedTable('service_requests', [owned]);
+    await request(app).patch(`/api/service-requests/${owned.id}`).set('Authorization', customer.bearer).send({ title: 'New title' }).expect(200);
+    seedTable('service_requests', [sr({ requester_id: customer.id, status: 'APPROVED' })]);
+    const approved = getTable('service_requests')[1];
+    await request(app).patch(`/api/service-requests/${approved.id}`).set('Authorization', customer.bearer).send({ title: 'Attempt edit' }).expect(409);
+  });
+
   it('filters by status', async () => {
     const u = seedUser('OPS_MANAGER');
     seedTable('service_requests', [sr({ status: 'SUBMITTED' }), sr({ status: 'DRAFT' })]);

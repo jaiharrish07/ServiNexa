@@ -28,7 +28,7 @@ export function matchStub(
   }
 
   const ranked: RankedTechnician[] = technicians
-    .filter((t: any) => t.is_available)
+    .filter((t: any) => t.is_available && (t.current_job_count ?? 0) < (t.max_concurrent_jobs ?? 3))
     .map((tech: any) => {
       let score = 50;
       const reasons: string[] = [];

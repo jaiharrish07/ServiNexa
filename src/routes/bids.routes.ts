@@ -7,6 +7,8 @@ import { openBidding, scoreBids, acceptBid } from '../services/bidding.service';
 import { resolveTechnicianId } from '../utils/technician';
 import { createAuditLog } from '../services/audit';
 import { TransitionResult } from '../services/workflow';
+import { validate } from '../middleware/validate';
+import { bidIdParam, bidRoundOpenSchema, bidSubmitSchema, requestIdParam } from '../schemas/features';
 
 // Mounted at /api (Feature 4: collaborative solution bidding).
 const router = Router();
@@ -18,7 +20,10 @@ function httpFor(result: TransitionResult): number {
     case 'FORBIDDEN':
       return 403;
     case 'INVALID_TRANSITION':
+    case 'CONFLICT':
       return 409;
+    case 'DB_ERROR':
+      return 500;
     default:
       return 400;
   }
@@ -29,6 +34,7 @@ router.post(
   '/bid-rounds/:requestId/open',
   authenticate,
   authorize('OPS_MANAGER', 'ADMIN'),
+  validate({ params: requestIdParam, body: bidRoundOpenSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const result = await openBidding(req.params.requestId, Number(req.body?.top_n) || 3, req.user!.id, req.user!.role);
     if (!result.success) throw new AppError(result.error ?? 'Failed to open bidding', httpFor(result), result.code);
@@ -40,6 +46,8 @@ router.post(
 router.post(
   '/bids/submit',
   authenticate,
+  authorize('TECHNICIAN'),
+  validate({ body: bidSubmitSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const techId = await resolveTechnicianId(req.user!.id);
     if (!techId) throw forbidden('Only technicians can submit bids');
@@ -93,6 +101,7 @@ router.post(
 router.get(
   '/bids/:requestId',
   authenticate,
+  validate({ params: requestIdParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const isOps = req.user!.role === 'OPS_MANAGER' || req.user!.role === 'ADMIN';
     let query = supabase
@@ -118,6 +127,7 @@ router.post(
   '/bids/:requestId/score',
   authenticate,
   authorize('OPS_MANAGER', 'ADMIN'),
+  validate({ params: requestIdParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const result = await scoreBids(req.params.requestId, req.user!.id, req.user!.role);
     if (!result.success) throw new AppError(result.error ?? 'Failed to score bids', httpFor(result), result.code);
@@ -130,6 +140,7 @@ router.put(
   '/bids/:bidId/accept',
   authenticate,
   authorize('OPS_MANAGER', 'ADMIN'),
+  validate({ params: bidIdParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const result = await acceptBid(req.params.bidId, req.user!.id, req.user!.role);
     if (!result.success) throw new AppError(result.error ?? 'Failed to accept bid', httpFor(result), result.code);

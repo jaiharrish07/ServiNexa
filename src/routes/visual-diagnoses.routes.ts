@@ -6,6 +6,10 @@ import { ok, created } from '../utils/api-response';
 import { createVisualDiagnosis, get3dData } from '../services/visual-diagnosis.service';
 import { resolveTechnicianId } from '../utils/technician';
 import { createAuditLog } from '../services/audit';
+import { getAccessibleServiceRequest } from '../utils/access';
+import { validate } from '../middleware/validate';
+import { idParam } from '../schemas/common';
+import { requestIdParam, technicianDiagnosisCreateSchema, visualDiagnosisCreateSchema, visualDiagnosisIdParam } from '../schemas/features';
 
 // Mounted at /api (Feature 1: 3D visual diagnosis + remote expert review).
 const router = Router();
@@ -14,9 +18,12 @@ const router = Router();
 router.post(
   '/visual-diagnoses',
   authenticate,
+  authorize('OPS_MANAGER', 'ADMIN'),
+  validate({ body: visualDiagnosisCreateSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { service_request_id } = req.body ?? {};
     if (!service_request_id) throw badRequest('service_request_id is required');
+    if (!await getAccessibleServiceRequest(service_request_id, req.user!)) throw notFound('Service request not found');
     const { data: sr } = await supabase
       .from('service_requests')
       .select('*')
@@ -32,7 +39,9 @@ router.post(
 router.get(
   '/visual-diagnoses/:requestId',
   authenticate,
+  validate({ params: requestIdParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!await getAccessibleServiceRequest(req.params.requestId, req.user!)) throw notFound('Service request not found');
     const { data } = await supabase
       .from('visual_diagnoses')
       .select('*')
@@ -48,7 +57,12 @@ router.get(
 router.get(
   '/visual-diagnoses/:id/3d-data',
   authenticate,
+  validate({ params: idParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { data: diagnosis } = await supabase.from('visual_diagnoses').select('service_request_id').eq('id', req.params.id).maybeSingle();
+    if (!diagnosis || !await getAccessibleServiceRequest(diagnosis.service_request_id, req.user!)) {
+      throw notFound('Visual diagnosis not found');
+    }
     const data = await get3dData(req.params.id);
     if (!data) throw notFound('Visual diagnosis not found');
     ok(res, data);
@@ -59,6 +73,8 @@ router.get(
 router.post(
   '/technician-diagnoses',
   authenticate,
+  authorize('TECHNICIAN'),
+  validate({ body: technicianDiagnosisCreateSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const techId = await resolveTechnicianId(req.user!.id);
     if (!techId) throw forbidden('Only technicians can submit a diagnosis');
@@ -66,6 +82,10 @@ router.post(
     const b = req.body ?? {};
     if (!b.visual_diagnosis_id || !b.diagnosis_text || !b.proposed_solution) {
       throw badRequest('visual_diagnosis_id, diagnosis_text and proposed_solution are required');
+    }
+    const { data: visual } = await supabase.from('visual_diagnoses').select('service_request_id').eq('id', b.visual_diagnosis_id).maybeSingle();
+    if (!visual || !await getAccessibleServiceRequest(visual.service_request_id, req.user!)) {
+      throw notFound('Visual diagnosis not found');
     }
 
     const { data, error } = await supabase
@@ -104,6 +124,8 @@ router.post(
 router.get(
   '/technician-diagnoses/:visualDiagnosisId',
   authenticate,
+  authorize('OPS_MANAGER', 'ADMIN'),
+  validate({ params: visualDiagnosisIdParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { data } = await supabase
       .from('technician_diagnoses')
@@ -119,6 +141,7 @@ router.put(
   '/technician-diagnoses/:id/select',
   authenticate,
   authorize('OPS_MANAGER', 'ADMIN'),
+  validate({ params: idParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { data: diag } = await supabase
       .from('technician_diagnoses')

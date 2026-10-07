@@ -4,6 +4,8 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { asyncHandler, badRequest, notFound } from '../middleware/error-handler';
 import { ok, created } from '../utils/api-response';
 import { searchSimilar } from '../services/knowledge.service';
+import { validate } from '../middleware/validate';
+import { knowledgeCreateSchema, knowledgeIdParam, knowledgeSearchQuerySchema } from '../schemas/features';
 
 // Mounted at /api (Feature 7: solution knowledge base).
 const router = Router();
@@ -12,12 +14,14 @@ const router = Router();
 router.get(
   '/knowledge/search',
   authenticate,
+  authorize('ADMIN', 'OPS_MANAGER', 'TECHNICIAN'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    const query = knowledgeSearchQuerySchema.parse(req.query);
     const result = await searchSimilar({
-      category: req.query.category as string | undefined,
-      machine_type: req.query.machine_type as string | undefined,
-      sub_category: req.query.sub_category as string | undefined,
-      description: (req.query.q as string | undefined) ?? '',
+      category: query.category,
+      machine_type: query.machine_type,
+      sub_category: query.sub_category,
+      description: query.q ?? '',
     });
     ok(res, { results: result });
   })
@@ -27,6 +31,7 @@ router.get(
 router.get(
   '/knowledge/stats',
   authenticate,
+  authorize('ADMIN', 'OPS_MANAGER', 'TECHNICIAN'),
   asyncHandler(async (_req: AuthRequest, res: Response) => {
     const { data } = await supabase.from('knowledge_entries').select('machine_type, category, success_flag');
     const rows = data ?? [];
@@ -47,6 +52,8 @@ router.get(
 router.get(
   '/knowledge/:id',
   authenticate,
+  authorize('ADMIN', 'OPS_MANAGER', 'TECHNICIAN'),
+  validate({ params: knowledgeIdParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { data } = await supabase.from('knowledge_entries').select('*').eq('id', req.params.id).maybeSingle();
     if (!data) throw notFound('Knowledge entry not found');
@@ -59,6 +66,7 @@ router.post(
   '/knowledge',
   authenticate,
   authorize('OPS_MANAGER', 'ADMIN'),
+  validate({ body: knowledgeCreateSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body ?? {};
     if (!b.machine_type || !b.category || !b.problem_description || !b.solution_applied) {

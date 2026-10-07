@@ -48,6 +48,7 @@ describe('workflow pure helpers', () => {
     expect(canRoleTransition('PENDING_APPROVAL', 'APPROVED', 'CUSTOMER')).toBe(false);
     expect(canRoleTransition('EXCEPTION', 'CLOSED', 'OPS_MANAGER')).toBe(false);
     expect(canRoleTransition('EXCEPTION', 'CLOSED', 'ADMIN')).toBe(true);
+    expect(canRoleTransition('DRAFT', 'SUBMITTED', 'INTRUDER')).toBe(false);
   });
   it('maps SLA windows and lists all statuses incl. bidding', () => {
     expect(slaHoursFor('CRITICAL')).toBe(4);
@@ -97,7 +98,7 @@ describe('transitionStatus (against in-memory DB)', () => {
 
   it('SUBMITTED sets an SLA deadline and writes an audit row', async () => {
     seedTable('service_requests', [srRow({ status: 'DRAFT', priority: 'CRITICAL' })]);
-    const r = await transitionStatus('sr1', 'SUBMITTED', 'u1', 'CUSTOMER');
+    const r = await transitionStatus('sr1', 'SUBMITTED', 'req1', 'CUSTOMER');
     expect(r.success).toBe(true);
     const row = getTable('service_requests')[0];
     expect(row.status).toBe('SUBMITTED');
@@ -115,7 +116,7 @@ describe('transitionStatus (against in-memory DB)', () => {
   });
 
   it('ASSIGNED increments the technician job count via RPC', async () => {
-    seedTable('technicians', [{ id: 'tech1', current_job_count: 1, user_id: 'tu1' }]);
+    seedTable('technicians', [{ id: 'tech1', current_job_count: 1, max_concurrent_jobs: 3, is_available: true, user_id: 'tu1' }]);
     seedTable('service_requests', [srRow({ status: 'APPROVED', priority: 'HIGH' })]);
     const r = await transitionStatus('sr1', 'ASSIGNED', 'ops1', 'OPS_MANAGER', { technician_id: 'tech1' });
     expect(r.success).toBe(true);
@@ -123,18 +124,44 @@ describe('transitionStatus (against in-memory DB)', () => {
     expect(getTable('technicians')[0].current_job_count).toBe(2);
   });
 
+  it('does not assign a technician who is at capacity', async () => {
+    seedTable('technicians', [{ id: 'tech1', current_job_count: 3, max_concurrent_jobs: 3, is_available: true, user_id: 'tu1' }]);
+    seedTable('service_requests', [srRow({ status: 'APPROVED', priority: 'HIGH' })]);
+    const r = await transitionStatus('sr1', 'ASSIGNED', 'ops1', 'OPS_MANAGER', { technician_id: 'tech1' });
+    expect(r.success).toBe(false);
+    expect(r.code).toBe('CONFLICT');
+    expect(getTable('service_requests')[0].status).toBe('APPROVED');
+    expect(getTable('technicians')[0].current_job_count).toBe(3);
+  });
+
   it('COMPLETED decrements the technician and records notes', async () => {
     seedTable('technicians', [{ id: 'tech1', current_job_count: 2, user_id: 'tu1' }]);
     seedTable('service_requests', [srRow({ status: 'IN_PROGRESS', priority: 'HIGH', assigned_technician_id: 'tech1' })]);
-    const r = await transitionStatus('sr1', 'COMPLETED', 'tech1', 'TECHNICIAN', { resolution_notes: 'fixed' });
+    const r = await transitionStatus('sr1', 'COMPLETED', 'tu1', 'TECHNICIAN', { resolution_notes: 'fixed' });
     expect(r.success).toBe(true);
     expect(getTable('service_requests')[0].resolution_notes).toBe('fixed');
     expect(getTable('technicians')[0].current_job_count).toBe(1);
   });
 
+  it('reopening a completed request restores the active job count', async () => {
+    seedTable('technicians', [{ id: 'tech1', current_job_count: 1, user_id: 'tu1' }]);
+    seedTable('service_requests', [srRow({ status: 'COMPLETED', priority: 'HIGH', assigned_technician_id: 'tech1' })]);
+    const r = await transitionStatus('sr1', 'IN_PROGRESS', 'ops1', 'OPS_MANAGER');
+    expect(r.success).toBe(true);
+    expect(getTable('technicians')[0].current_job_count).toBe(2);
+  });
+
+  it('closing an exception releases the active job count', async () => {
+    seedTable('technicians', [{ id: 'tech1', current_job_count: 2, user_id: 'tu1' }]);
+    seedTable('service_requests', [srRow({ status: 'EXCEPTION', priority: 'HIGH', assigned_technician_id: 'tech1' })]);
+    const r = await transitionStatus('sr1', 'CLOSED', 'ops1', 'ADMIN');
+    expect(r.success).toBe(true);
+    expect(getTable('technicians')[0].current_job_count).toBe(1);
+  });
+
   it('builds a growing audit chain across multiple transitions', async () => {
     seedTable('service_requests', [srRow({ status: 'DRAFT', priority: 'LOW' })]);
-    await transitionStatus('sr1', 'SUBMITTED', 'u1', 'CUSTOMER');
+    await transitionStatus('sr1', 'SUBMITTED', 'req1', 'CUSTOMER');
     await transitionStatus('sr1', 'VALIDATING', 'ops1', 'OPS_MANAGER');
     expect(getTable('audit_logs').length).toBe(2);
   });

@@ -1,9 +1,12 @@
 import { Router, Response } from 'express';
 import { supabase } from '../config/supabase';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { asyncHandler, badRequest, notFound } from '../middleware/error-handler';
 import { ok } from '../utils/api-response';
 import { sourceParts } from '../services/parts.service';
+import { canAccessSite, getAccessibleServiceRequest } from '../utils/access';
+import { validate } from '../middleware/validate';
+import { partsSourcingSchema, partNumberParam, requestIdParam, siteIdParam } from '../schemas/features';
 
 // Mounted at /api (Feature 3: parts sourcing & availability).
 const router = Router();
@@ -27,7 +30,9 @@ async function partsFromSelectedBid(serviceRequestId: string): Promise<string[]>
 router.post(
   '/parts-sourcing/:requestId',
   authenticate,
+  validate({ params: requestIdParam, body: partsSourcingSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!await getAccessibleServiceRequest(req.params.requestId, req.user!)) throw notFound('Service request not found');
     const { data: sr } = await supabase
       .from('service_requests')
       .select('id, site_id, priority')
@@ -51,7 +56,9 @@ router.post(
 router.get(
   '/parts-sourcing/:requestId',
   authenticate,
+  validate({ params: requestIdParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!await getAccessibleServiceRequest(req.params.requestId, req.user!)) throw notFound('Service request not found');
     const { data: sr } = await supabase
       .from('service_requests')
       .select('id, site_id, priority')
@@ -70,7 +77,9 @@ router.get(
 router.get(
   '/inventory/:siteId',
   authenticate,
+  validate({ params: siteIdParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!await canAccessSite(req.params.siteId, req.user!)) throw notFound('Site inventory not found');
     const { data } = await supabase
       .from('spare_parts')
       .select('*')
@@ -89,6 +98,8 @@ router.get(
 router.get(
   '/parts/:partNumber/substitutes',
   authenticate,
+  authorize('ADMIN', 'OPS_MANAGER', 'TECHNICIAN'),
+  validate({ params: partNumberParam }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { data } = await supabase
       .from('part_substitutes')

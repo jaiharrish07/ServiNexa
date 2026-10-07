@@ -4,6 +4,9 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler, badRequest, notFound } from '../middleware/error-handler';
 import { ok } from '../utils/api-response';
 import { computeImpact, getDependencyGraph } from '../services/impact.service';
+import { getAccessibleServiceRequest, isOperations } from '../utils/access';
+import { validate } from '../middleware/validate';
+import { machineIdParam, requestIdParam } from '../schemas/features';
 
 // Mounted at /api (Feature 2: cascading impact).
 const router = Router();
@@ -12,6 +15,11 @@ const router = Router();
 router.post(
   '/impact-analysis/:requestId',
   authenticate,
+  validate({ params: requestIdParam }),
+  asyncHandler(async (req: AuthRequest, _res: Response, next) => {
+    if (!await getAccessibleServiceRequest(req.params.requestId, req.user!)) return next(notFound('Service request not found'));
+    next();
+  }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { data: sr } = await supabase
       .from('service_requests')
@@ -30,6 +38,11 @@ router.post(
 router.get(
   '/impact-analysis/:requestId',
   authenticate,
+  validate({ params: requestIdParam }),
+  asyncHandler(async (req: AuthRequest, _res: Response, next) => {
+    if (!await getAccessibleServiceRequest(req.params.requestId, req.user!)) return next(notFound('Service request not found'));
+    next();
+  }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { data } = await supabase
       .from('impact_analyses')
@@ -46,6 +59,11 @@ router.get(
 router.get(
   '/dependencies/:machineId',
   authenticate,
+  validate({ params: machineIdParam }),
+  asyncHandler(async (req: AuthRequest, _res: Response, next) => {
+    if (!isOperations(req.user!)) return next(notFound('Machine not found'));
+    next();
+  }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const edges = await getDependencyGraph(req.params.machineId);
     ok(res, { dependencies: edges });

@@ -1,4 +1,4 @@
-import { AI_SERVICE_URL, AI_TIMEOUT_MS } from '../config/ai-service';
+import { AI_SERVICE_URL, AI_SERVICE_TOKEN, AI_TIMEOUT_MS } from '../config/ai-service';
 
 /**
  * Standard envelope returned by every AI call. When the live Python AI
@@ -27,7 +27,10 @@ export async function callAIService<T>(
   try {
     const response = await fetch(`${AI_SERVICE_URL}${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(AI_SERVICE_TOKEN ? { 'X-AI-Service-Token': AI_SERVICE_TOKEN } : {}),
+      },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });

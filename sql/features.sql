@@ -192,10 +192,12 @@ CREATE TABLE IF NOT EXISTS public.parts_staging (
                      CHECK (status IN ('IDENTIFIED','RESERVED','IN_TRANSIT','STAGED','ISSUED')),
   staging_location   TEXT,
   eta                TIMESTAMPTZ,
+  actual_arrival     TIMESTAMPTZ,
   staged_by          UUID REFERENCES public.users(id),
   created_at         TIMESTAMPTZ DEFAULT now(),
   updated_at         TIMESTAMPTZ DEFAULT now()
 );
+ALTER TABLE public.parts_staging ADD COLUMN IF NOT EXISTS actual_arrival TIMESTAMPTZ;
 
 -- ============ FEATURE 7: Knowledge base ============
 CREATE TABLE IF NOT EXISTS public.knowledge_entries (
@@ -241,7 +243,7 @@ CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.visual_diagnoses FOR EACH 
 DROP TRIGGER IF EXISTS set_updated_at ON public.parts_staging;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.parts_staging FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- ============ RLS (permissive hackathon policy — API uses the service role) ============
+-- ============ RLS (deny direct client access; API uses the service role) ============
 DO $$
 DECLARE t TEXT;
 BEGIN
@@ -253,7 +255,7 @@ BEGIN
   ] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', t);
     EXECUTE format('DROP POLICY IF EXISTS "Service role full access" ON public.%I;', t);
-    EXECUTE format('CREATE POLICY "Service role full access" ON public.%I FOR ALL USING (true) WITH CHECK (true);', t);
+    EXECUTE format('CREATE POLICY "Service role full access" ON public.%I FOR ALL TO service_role USING (true) WITH CHECK (true);', t);
   END LOOP;
 END $$;
 

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { supabase } from '../config/supabase';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error-handler';
 import { ok } from '../utils/api-response';
 
@@ -32,6 +32,7 @@ function slaStatus(createdAt: string, deadline: string | null): { status: string
 router.get(
   '/dashboard/sla-heatmap',
   authenticate,
+  authorize('ADMIN', 'OPS_MANAGER'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     let query = supabase
       .from('service_requests')
