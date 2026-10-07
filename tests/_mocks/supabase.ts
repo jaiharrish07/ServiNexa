@@ -309,6 +309,18 @@ export const mockSupabase = {
   from(table: string) {
     return new Query(table);
   },
+  // Postgres RPCs used by Dev A's workflow engine (atomic technician job-count).
+  async rpc(fn: string, args: Record<string, any> = {}) {
+    if (fn === 'increment_job_count' || fn === 'decrement_job_count') {
+      const tech = getTable('technicians').find((r) => r.id === args.tech_id);
+      if (tech) {
+        const cur = tech.current_job_count ?? 0;
+        tech.current_job_count = fn === 'increment_job_count' ? cur + 1 : Math.max(0, cur - 1);
+      }
+      return { data: null, error: null };
+    }
+    return { data: null, error: { code: 'MOCK_ERR', message: `unknown rpc ${fn}` } };
+  },
   auth: {
     async getUser(token?: string) {
       if (!token || !token.startsWith('tok_')) {

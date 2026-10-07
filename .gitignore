@@ -11,3 +11,6 @@ ServiNexa/
 ai-service/__pycache__/
 ai-service/.venv/
 ai-service/*.joblib
+
+# Editor vaults
+.obsidian/

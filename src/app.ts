@@ -18,6 +18,10 @@ import workOrderRoutes from './routes/work-orders.routes';
 import sparePartRoutes from './routes/spare-parts.routes';
 import notificationRoutes from './routes/notifications.routes';
 import reportRoutes from './routes/reports.routes';
+// ─── Dev A route modules (workflow / AI / audit) ────────────────────────────
+import workflowRoutes from './routes/workflow.routes';
+import aiRoutes from './routes/ai.routes';
+import auditRoutes from './routes/audit.routes';
 import { mountDocs } from './schemas/openapi';
 
 export function buildApp(): Express {
@@ -73,14 +77,10 @@ export function buildApp(): Express {
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/reports', reportRoutes);
 
-  // ══════════════════ DEV A MERGE POINT ══════════════════
-  // Jai mounts these on merge (files owned by Dev A — intentionally NOT created here):
-  //   import workflowRoutes from './routes/workflow.routes';
-  //   import aiRoutes from './routes/ai.routes';
-  //   import auditRoutes from './routes/audit.routes';
-  //   app.use('/api/service-requests', workflowRoutes);  // adds /:id/transition, /:id/exception
-  //   app.use('/api/ai', aiRoutes);                       // classify, predict, match, anomalies
-  //   app.use('/api/audit', auditRoutes);                 // audit log + chain verify
+  // ══════════════════ DEV A ROUTES (merged) ══════════════════
+  app.use('/api/service-requests', workflowRoutes); // adds /:id/transition, /:id/exception
+  app.use('/api/ai', aiRoutes); // classify, predict, match, anomalies
+  app.use('/api/audit', auditRoutes); // audit log + chain verify
   // ════════════════════════════════════════════════════════
 
   // ── 404 + global error handler (must be last) ──
