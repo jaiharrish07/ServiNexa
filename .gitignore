@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+# empty nested clone of the remote (leftover) — our work lives at repo root
+ServiNexa/
+.env
+.env.local
+*.log
+.DS_Store
+.vscode/
+ai-service/__pycache__/
+ai-service/.venv/
+ai-service/*.joblib
