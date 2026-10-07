@@ -7,6 +7,7 @@ interface AuthState {
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, full_name: string, phone?: string) => Promise<void>;
   logout: () => void;
   loadUser: () => Promise<void>;
   hydrate: () => void;
@@ -29,6 +30,12 @@ export const useAuth = create<AuthState>((set) => ({
 
   login: async (email: string, password: string) => {
     const data = await api.post<{ token: string; user: User }>('/api/auth/login', { email, password });
+    api.setToken(data.token);
+    set({ user: data.user, token: data.token, loading: false });
+  },
+
+  signup: async (email: string, password: string, full_name: string, phone?: string) => {
+    const data = await api.post<{ token: string; user: User }>('/api/auth/signup', { email, password, full_name, phone });
     api.setToken(data.token);
     set({ user: data.user, token: data.token, loading: false });
   },

@@ -25,20 +25,20 @@ import {
 import { useAuth } from '@/store/auth';
 import { api } from '@/lib/api';
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/service-requests', label: 'Service Requests', icon: ClipboardList },
-  { href: '/work-orders', label: 'Work Orders', icon: Wrench },
-  { href: '/machines', label: 'Machines', icon: Cog },
-  { href: '/technicians', label: 'Technicians', icon: Users },
-  { href: '/sites', label: 'Sites', icon: MapPin },
-  { href: '/spare-parts', label: 'Spare Parts', icon: Package },
-  { href: '/ai', label: 'AI Insights', icon: Brain },
-  { href: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
-  { href: '/bidding', label: 'Bidding', icon: Gavel },
-  { href: '/reports', label: 'Reports', icon: BarChart3 },
-  { href: '/notifications', label: 'Notifications', icon: Bell },
-  { href: '/audit', label: 'Audit Log', icon: Shield },
+const allNavItems = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN', 'CUSTOMER'] },
+  { href: '/service-requests', label: 'Service Requests', icon: ClipboardList, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN', 'CUSTOMER'] },
+  { href: '/work-orders', label: 'Work Orders', icon: Wrench, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN'] },
+  { href: '/machines', label: 'Machines', icon: Cog, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN'] },
+  { href: '/technicians', label: 'Technicians', icon: Users, roles: ['ADMIN', 'OPS_MANAGER'] },
+  { href: '/sites', label: 'Sites', icon: MapPin, roles: ['ADMIN', 'OPS_MANAGER'] },
+  { href: '/spare-parts', label: 'Spare Parts', icon: Package, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN'] },
+  { href: '/ai', label: 'AI Insights', icon: Brain, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN'] },
+  { href: '/knowledge', label: 'Knowledge Base', icon: BookOpen, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN'] },
+  { href: '/bidding', label: 'Bidding', icon: Gavel, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN', 'CUSTOMER'] },
+  { href: '/reports', label: 'Reports', icon: BarChart3, roles: ['ADMIN', 'OPS_MANAGER'] },
+  { href: '/notifications', label: 'Notifications', icon: Bell, roles: ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN', 'CUSTOMER'] },
+  { href: '/audit', label: 'Audit Log', icon: Shield, roles: ['ADMIN'] },
 ];
 
 const roleColors: Record<string, string> = {
@@ -62,6 +62,7 @@ export function Sidebar() {
   const logout = useAuth((s) => s.logout);
   const [collapsed, setCollapsed] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const navItems = allNavItems.filter((item) => item.roles.includes(user?.role ?? ''));
 
   useEffect(() => {
     const token = api.getToken();

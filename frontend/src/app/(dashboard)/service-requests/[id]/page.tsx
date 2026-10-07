@@ -329,10 +329,10 @@ export default function ServiceRequestDetailPage() {
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-2xl font-bold text-[var(--text-primary)]">{request.request_number}</h1>
               <Badge variant={statusBadgeVariant(request.status)}>
-                {request.status.replace(/_/g, ' ')}
+                {(request.status ?? '').replace(/_/g, ' ')}
               </Badge>
               <Badge variant={priorityBadgeVariant(request.priority)}>
-                {request.priority}
+                {request.priority ?? 'N/A'}
               </Badge>
             </div>
             <p className="text-lg text-[var(--text-secondary)]">{request.title}</p>
@@ -778,7 +778,7 @@ export default function ServiceRequestDetailPage() {
                                 <div className="flex items-start justify-between">
                                   <div>
                                     <p className="text-sm font-medium text-[var(--text-primary)]">
-                                      {log.action.replace(/_/g, ' ')}
+                                      {(log.action ?? '').replace(/_/g, ' ')}
                                     </p>
                                     {log.field_changed && (
                                       <p className="text-xs text-[var(--text-secondary)] mt-1">

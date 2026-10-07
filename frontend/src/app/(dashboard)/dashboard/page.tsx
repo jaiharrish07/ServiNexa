@@ -69,7 +69,7 @@ const PRIORITY_BADGE_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 
   LOW: 'success',
 };
 
-const ALLOWED_ROLES = ['ADMIN', 'OPS_MANAGER'];
+const ALLOWED_ROLES = ['ADMIN', 'OPS_MANAGER', 'TECHNICIAN', 'CUSTOMER'];
 
 // ---------------------------------------------------------------------------
 // Helper – gradient bar defs
