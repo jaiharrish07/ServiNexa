@@ -5,8 +5,12 @@
  *   3) npm run smoke
  *
  * Base URL from SMOKE_BASE_URL, else http://localhost:3001.
+ * Test service requests are intentionally retained for post-run inspection.
  */
+import { randomUUID } from 'node:crypto';
+
 const BASE = process.env.SMOKE_BASE_URL || 'http://localhost:3001';
+const RUN_ID = process.env.SMOKE_RUN_ID || `smoke-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
 let token = '';
 let pass = 0;
 let fail = 0;
@@ -38,7 +42,8 @@ function check(label: string, ok: boolean, detail = '') {
 }
 
 async function main() {
-  console.log(`\n=== DQBH Dev-B smoke @ ${BASE} ===\n`);
+  console.log(`\n=== DQBH Dev-B smoke @ ${BASE} ===`);
+  console.log(`Run ID: ${RUN_ID} (created service requests are retained)\n`);
 
   const health = await api('GET', '/health');
   check('GET /health', health.status === 200, `status ${health.status}`);
@@ -64,13 +69,21 @@ async function main() {
   const sr = await api('POST', '/api/service-requests', {
     site_id: siteA?.id ?? m104?.site_id,
     machine_id: m104?.id,
-    title: 'Hydraulic leak on CNC Mill',
-    description: 'Hydraulic system on M-104 leaking near the main cylinder; pressure dropping.',
+    title: `Smoke test hydraulic leak ${RUN_ID}`,
+    description: `Smoke fixture ${RUN_ID}: hydraulic system on M-104 leaking near the main cylinder; pressure dropping.`,
     priority: 'HIGH',
     category: 'HYDRAULIC',
   });
-  check('POST /api/service-requests', sr.status === 201 && /^SR-\d{8}-\d{3}$/.test(sr.json?.service_request?.request_number), sr.json?.service_request?.request_number);
-  const srId = sr.json?.service_request?.id;
+  const serviceRequest = sr.json?.service_request;
+  check('POST /api/service-requests', sr.status === 201 && !!serviceRequest?.id && /^SR-\d{8}-\d{3}$/.test(serviceRequest?.request_number), serviceRequest?.request_number);
+  if (sr.status !== 201 || !serviceRequest?.id) {
+    console.log(`\nRun ID: ${RUN_ID}; no service request was created.`);
+    return finish();
+  }
+  const srId = serviceRequest.id;
+  console.log(`Created request UUID: ${srId}`);
+  const persisted = await api('GET', `/api/service-requests/${srId}`);
+  check('GET created service request by UUID', persisted.status === 200 && persisted.json?.service_request?.id === srId, `status ${persisted.status}`);
 
   const assignedTechId = techs.json?.technicians?.[0]?.id;
   let readyForWorkOrder = Boolean(srId && assignedTechId);
@@ -113,6 +126,10 @@ async function main() {
   const unread = await api('GET', '/api/notifications/unread-count');
   check('GET /api/notifications/unread-count', unread.status === 200, `unread ${unread.json?.unread_count}`);
 
+  const retained = await api('GET', `/api/service-requests/${srId}`);
+  check('Verify smoke fixture retained after workflow', retained.status === 200 && retained.json?.service_request?.id === srId, `UUID ${srId}`);
+
+  console.log(`\nRetained test fixture: run=${RUN_ID} request_id=${srId} request_number=${serviceRequest.request_number}`);
   finish();
 }
 

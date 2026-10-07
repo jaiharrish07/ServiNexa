@@ -7,11 +7,13 @@
  * Run from the repo root: `npm run demo`
  */
 import dotenv from 'dotenv';
+import { randomUUID } from 'node:crypto';
 
 dotenv.config();
 
 const PORT = process.env.PORT || 3001;
 const API = `http://localhost:${PORT}/api`;
+const RUN_ID = process.env.DEMO_RUN_ID || `demo-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
 let token = '';
 
 async function api(method: string, path: string, body?: any): Promise<any> {
@@ -31,13 +33,14 @@ async function api(method: string, path: string, body?: any): Promise<any> {
     json = { error: `Non-JSON response (${res.status}): ${text.slice(0, 120)}` };
   }
   if (!res.ok) {
-    console.warn(`  ⚠ ${method} ${path} → ${res.status}: ${json.error || 'error'}`);
+    throw new Error(`${method} ${path} → ${res.status}: ${json.error || 'error'}`);
   }
   return json;
 }
 
 async function demo() {
-  console.log('\n=== DQBH / ServiNexa DEMO FLOW ===\n');
+  console.log('\n=== DQBH / ServiNexa DEMO FLOW ===');
+  console.log(`Run ID: ${RUN_ID} (created service requests are retained)\n`);
 
   // 1. Login as customer
   console.log('1. Customer submits an NLP request...');
@@ -56,14 +59,15 @@ async function demo() {
   const srRes = await api('POST', '/service-requests', {
     site_id: m104.site_id,
     machine_id: m104.id,
-    title: 'Hydraulic leak on CNC Mill',
+    title: `Hackathon demo hydraulic leak ${RUN_ID}`,
     description:
       'The hydraulic system on CNC Mill M-104 is leaking fluid near the main cylinder. ' +
-      'Pressure is dropping and the machine is making unusual grinding noises during operation.',
-    raw_input: 'The hydraulic system on CNC Mill M-104 is leaking fluid near the main cylinder.',
+      `Pressure is dropping and the machine is making unusual grinding noises during operation. Fixture ${RUN_ID}.`,
+    raw_input: `Demo fixture ${RUN_ID}: hydraulic system on CNC Mill M-104 is leaking near the main cylinder.`,
   });
   const sr = srRes.service_request;
-  console.log(`   Created: ${sr?.request_number}`);
+  if (!sr?.id || !sr?.request_number) throw new Error('Create service request returned no UUID or request number');
+  console.log(`   Created: ${sr.request_number} (UUID ${sr.id})`);
 
   // 3. AI classifies the request
   console.log('\n2. AI classifies the request...');
@@ -86,6 +90,9 @@ async function demo() {
     await api('POST', `/service-requests/${sr.id}/transition`, { status });
     console.log(`   → ${status}`);
   }
+
+  const persistedRequest = await api('GET', `/service-requests/${sr.id}`);
+  if (persistedRequest.service_request?.id !== sr.id) throw new Error(`Demo request ${sr.id} was not readable after workflow transitions`);
 
   // 5. AI matches the best technician
   console.log('\n4. AI matches the best technician...');
@@ -135,6 +142,9 @@ async function demo() {
   const auditRes = await api('GET', '/audit/verify');
   console.log(`   ${auditRes.message}`);
 
+  const finalRequest = await api('GET', `/service-requests/${sr.id}`);
+  if (finalRequest.service_request?.id !== sr.id) throw new Error(`Demo request ${sr.id} was not retained at end of run`);
+  console.log(`\nRetained test fixture: run=${RUN_ID} request_id=${sr.id} request_number=${sr.request_number}`);
   console.log('\n=== DEMO COMPLETE ===\n');
 }
 
