@@ -69,11 +69,11 @@ export function DataTable<T extends Record<string, unknown>>({
   }, [data, sortKey, sortDir]);
 
   const SortIcon = ({ col }: { col: string }) => {
-    if (sortKey !== col || !sortDir) return <ChevronsUpDown size={14} className="text-gray-500" />;
+    if (sortKey !== col || !sortDir) return <ChevronsUpDown size={13} className="text-[var(--text-muted)]" />;
     return sortDir === 'asc' ? (
-      <ChevronUp size={14} className="text-[#3b82f6]" />
+      <ChevronUp size={13} className="text-[var(--accent-blue)]" />
     ) : (
-      <ChevronDown size={14} className="text-[#3b82f6]" />
+      <ChevronDown size={13} className="text-[var(--accent-blue)]" />
     );
   };
 
@@ -83,25 +83,25 @@ export function DataTable<T extends Record<string, unknown>>({
   return (
     <div
       className={clsx(
-        'overflow-x-auto rounded-2xl border border-[rgba(59,130,246,0.15)] bg-gradient-to-br from-[rgba(26,31,46,0.8)] to-[rgba(17,24,39,0.6)] backdrop-blur-xl',
+        'overflow-x-auto rounded-xl border border-[var(--border-primary)] bg-[var(--bg-card)]',
         className,
       )}
     >
       <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-[rgba(59,130,246,0.12)]">
+        <thead className="sticky top-0 z-10 bg-[var(--bg-secondary)]">
+          <tr className="border-b border-[var(--border-primary)]">
             {columns.map((col) => (
               <th
                 key={col.key}
                 className={clsx(
-                  'px-4 py-3 font-medium text-gray-400 whitespace-nowrap',
+                  'px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] whitespace-nowrap',
                   col.width,
                   alignClass(col.align),
-                  col.sortable && 'cursor-pointer select-none hover:text-gray-200 transition-colors',
+                  col.sortable && 'cursor-pointer select-none hover:text-[var(--text-secondary)] transition-colors duration-150',
                 )}
                 onClick={col.sortable ? () => handleSort(col.key) : undefined}
               >
-                <span className="inline-flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1">
                   {col.header}
                   {col.sortable && <SortIcon col={col.key} />}
                 </span>
@@ -115,20 +115,19 @@ export function DataTable<T extends Record<string, unknown>>({
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-4 py-12 text-center text-gray-500"
+                className="px-4 py-12 text-center text-[var(--text-muted)]"
               >
                 {emptyMessage}
               </td>
             </tr>
           ) : (
-            sorted.map((row, i) => (
+            sorted.map((row) => (
               <tr
                 key={rowKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={clsx(
-                  'border-b border-[rgba(59,130,246,0.06)] transition-colors',
-                  i % 2 === 0 ? 'bg-transparent' : 'bg-[rgba(255,255,255,0.02)]',
-                  'hover:bg-[rgba(59,130,246,0.08)]',
+                  'border-b border-[var(--border-subtle)] transition-colors duration-100',
+                  'hover:bg-[var(--bg-card-hover)]',
                   onRowClick && 'cursor-pointer',
                 )}
               >
@@ -136,7 +135,7 @@ export function DataTable<T extends Record<string, unknown>>({
                   <td
                     key={col.key}
                     className={clsx(
-                      'px-4 py-3 text-gray-200 whitespace-nowrap',
+                      'px-4 py-2.5 text-[var(--text-primary)] whitespace-nowrap',
                       col.width,
                       alignClass(col.align),
                     )}

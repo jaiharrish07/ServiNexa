@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 import { AlertCircle, Loader2, Mail, Lock, Zap } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 
@@ -214,6 +215,19 @@ export default function LoginPage() {
                 </button>
               ))}
             </div>
+          </motion.div>
+
+          {/* Register link */}
+          <motion.div variants={item} className="text-center">
+            <p className="text-sm text-[var(--text-muted)]">
+              Don&apos;t have an account?{' '}
+              <Link
+                href="/register"
+                className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
+              >
+                Sign up
+              </Link>
+            </p>
           </motion.div>
         </motion.div>
       </div>

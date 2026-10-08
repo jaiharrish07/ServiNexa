@@ -1,9 +1,26 @@
 'use client';
 
-import { useRef, useMemo, useState, useEffect } from 'react';
+import { useRef, useMemo, useState, useEffect, Component, type ReactNode } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars, Float, MeshDistortMaterial } from '@react-three/drei';
 import * as THREE from 'three';
+
+/* ---------- Reduced-motion context ---------- */
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduced(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setReduced(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  return reduced;
+}
 
 /* ---------- Gear (torus ring) ---------- */
 
@@ -14,6 +31,7 @@ function Gear({
   speed = 1,
   color = '#3b82f6',
   reverse = false,
+  reducedMotion = false,
 }: {
   position: [number, number, number];
   rotation?: [number, number, number];
@@ -21,10 +39,12 @@ function Gear({
   speed?: number;
   color?: string;
   reverse?: boolean;
+  reducedMotion?: boolean;
 }) {
   const ref = useRef<THREE.Mesh>(null!);
 
   useFrame((_, delta) => {
+    if (reducedMotion) return;
     ref.current.rotation.z += delta * speed * (reverse ? -1 : 1);
   });
 
@@ -51,6 +71,7 @@ function GearTeeth({
   speed = 1,
   color = '#3b82f6',
   reverse = false,
+  reducedMotion = false,
 }: {
   position: [number, number, number];
   radius?: number;
@@ -58,10 +79,12 @@ function GearTeeth({
   speed?: number;
   color?: string;
   reverse?: boolean;
+  reducedMotion?: boolean;
 }) {
   const ref = useRef<THREE.Group>(null!);
 
   useFrame((_, delta) => {
+    if (reducedMotion) return;
     ref.current.rotation.z += delta * speed * (reverse ? -1 : 1);
   });
 
@@ -106,7 +129,7 @@ function GearTeeth({
 
 /* ---------- Floating particles ---------- */
 
-function Particles({ count = 500 }: { count?: number }) {
+function Particles({ count = 400, reducedMotion = false }: { count?: number; reducedMotion?: boolean }) {
   const ref = useRef<THREE.Points>(null!);
 
   const [positions, colors] = useMemo(() => {
@@ -131,6 +154,7 @@ function Particles({ count = 500 }: { count?: number }) {
   }, [count]);
 
   useFrame((_, delta) => {
+    if (reducedMotion) return;
     ref.current.rotation.y += delta * 0.03;
     ref.current.rotation.x += delta * 0.01;
   });
@@ -160,30 +184,36 @@ function Particles({ count = 500 }: { count?: number }) {
 
 /* ---------- Distort Sphere ---------- */
 
-function DistortSphere() {
+function DistortSphere({ reducedMotion = false }: { reducedMotion?: boolean }) {
+  const sphere = (
+    <mesh position={[0, 0, -2]} scale={1.8}>
+      <icosahedronGeometry args={[1, 4]} />
+      <MeshDistortMaterial
+        color="#3b82f6"
+        emissive="#8b5cf6"
+        emissiveIntensity={0.15}
+        metalness={0.6}
+        roughness={0.3}
+        transparent
+        opacity={0.25}
+        distort={reducedMotion ? 0 : 0.35}
+        speed={reducedMotion ? 0 : 2}
+      />
+    </mesh>
+  );
+
+  if (reducedMotion) return sphere;
+
   return (
     <Float speed={2} rotationIntensity={0.5} floatIntensity={1}>
-      <mesh position={[0, 0, -2]} scale={1.8}>
-        <icosahedronGeometry args={[1, 4]} />
-        <MeshDistortMaterial
-          color="#3b82f6"
-          emissive="#8b5cf6"
-          emissiveIntensity={0.15}
-          metalness={0.6}
-          roughness={0.3}
-          transparent
-          opacity={0.25}
-          distort={0.35}
-          speed={2}
-        />
-      </mesh>
+      {sphere}
     </Float>
   );
 }
 
 /* ---------- Scene contents ---------- */
 
-function SceneContent() {
+function SceneContent({ reducedMotion }: { reducedMotion: boolean }) {
   return (
     <>
       {/* Lights */}
@@ -193,24 +223,24 @@ function SceneContent() {
       <pointLight position={[0, -5, -5]} intensity={0.5} color="#06b6d4" />
 
       {/* Stars background */}
-      <Stars radius={50} depth={60} count={1500} factor={3} fade speed={1} />
+      <Stars radius={50} depth={60} count={1500} factor={3} fade speed={reducedMotion ? 0 : 1} />
 
       {/* Interlocking gears */}
-      <GearTeeth position={[-1.2, 0.3, 0]} radius={1.2} teeth={16} speed={0.4} color="#3b82f6" />
-      <GearTeeth position={[1.5, 0.3, 0]} radius={0.9} teeth={12} speed={-0.533} color="#8b5cf6" reverse />
-      <Gear position={[0, -1.8, 0.3]} scale={0.6} speed={0.7} color="#06b6d4" />
-      <Gear position={[-2.8, 1.5, -0.5]} scale={0.5} speed={0.5} color="#8b5cf6" reverse />
-      <Gear position={[3, -1, -0.3]} scale={0.4} speed={0.8} color="#3b82f6" />
+      <GearTeeth position={[-1.2, 0.3, 0]} radius={1.2} teeth={16} speed={0.4} color="#3b82f6" reducedMotion={reducedMotion} />
+      <GearTeeth position={[1.5, 0.3, 0]} radius={0.9} teeth={12} speed={-0.533} color="#8b5cf6" reverse reducedMotion={reducedMotion} />
+      <Gear position={[0, -1.8, 0.3]} scale={0.6} speed={0.7} color="#06b6d4" reducedMotion={reducedMotion} />
+      <Gear position={[-2.8, 1.5, -0.5]} scale={0.5} speed={0.5} color="#8b5cf6" reverse reducedMotion={reducedMotion} />
+      <Gear position={[3, -1, -0.3]} scale={0.4} speed={0.8} color="#3b82f6" reducedMotion={reducedMotion} />
 
       {/* Central distort sphere */}
-      <DistortSphere />
+      <DistortSphere reducedMotion={reducedMotion} />
 
-      {/* Floating particles */}
-      <Particles count={600} />
+      {/* Floating particles (reduced from 600 to 400) */}
+      <Particles count={400} reducedMotion={reducedMotion} />
 
       {/* Controls */}
       <OrbitControls
-        autoRotate
+        autoRotate={!reducedMotion}
         autoRotateSpeed={0.5}
         enableZoom={false}
         enablePan={false}
@@ -221,26 +251,105 @@ function SceneContent() {
   );
 }
 
+/* ---------- WebGL error boundary ---------- */
+
+interface WebGLErrorBoundaryProps {
+  children: ReactNode;
+  fallback: ReactNode;
+}
+
+interface WebGLErrorBoundaryState {
+  hasError: boolean;
+}
+
+class WebGLErrorBoundary extends Component<WebGLErrorBoundaryProps, WebGLErrorBoundaryState> {
+  constructor(props: WebGLErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): WebGLErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
+}
+
+/* ---------- Gradient fallback ---------- */
+
+function GradientFallback({ className }: { className?: string }) {
+  return (
+    <div
+      className={className ?? 'absolute inset-0'}
+      style={{
+        background:
+          'radial-gradient(ellipse at 30% 40%, rgba(59,130,246,0.15) 0%, transparent 60%), ' +
+          'radial-gradient(ellipse at 70% 60%, rgba(139,92,246,0.12) 0%, transparent 55%), ' +
+          'linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #0a0e1a 100%)',
+      }}
+    />
+  );
+}
+
+/* ---------- Check for WebGL support ---------- */
+
+function isWebGLAvailable(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const canvas = document.createElement('canvas');
+    return !!(
+      window.WebGLRenderingContext &&
+      (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /* ---------- Exported component (SSR-safe) ---------- */
 
 export const HeroScene = ({ className }: { className?: string }) => {
   const [mounted, setMounted] = useState(false);
+  const [fadeIn, setFadeIn] = useState(false);
+  const [webglSupported, setWebglSupported] = useState(true);
+  const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     setMounted(true);
+    setWebglSupported(isWebGLAvailable());
+    // Trigger fade-in after a brief delay to ensure the canvas is ready
+    const timer = setTimeout(() => setFadeIn(true), 100);
+    return () => clearTimeout(timer);
   }, []);
 
   if (!mounted) return null;
 
+  if (!webglSupported) {
+    return <GradientFallback className={className} />;
+  }
+
   return (
-    <div className={className ?? 'absolute inset-0'}>
-      <Canvas
-        camera={{ position: [0, 0, 6], fov: 50 }}
-        gl={{ antialias: true, alpha: true }}
-        style={{ background: 'transparent' }}
-      >
-        <SceneContent />
-      </Canvas>
+    <div
+      className={className ?? 'absolute inset-0'}
+      style={{
+        opacity: fadeIn ? 1 : 0,
+        transition: 'opacity 0.8s ease-in-out',
+      }}
+    >
+      <WebGLErrorBoundary fallback={<GradientFallback className={className} />}>
+        <Canvas
+          camera={{ position: [0, 0, 6], fov: 50 }}
+          gl={{ antialias: true, alpha: true }}
+          style={{ background: 'transparent' }}
+        >
+          <SceneContent reducedMotion={reducedMotion} />
+        </Canvas>
+      </WebGLErrorBoundary>
     </div>
   );
 };

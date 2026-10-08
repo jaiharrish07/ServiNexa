@@ -28,19 +28,19 @@ export const LoadingSpinner = ({
           sizeMap[size],
         )}
         style={{
-          borderTopColor: '#3b82f6',
-          borderRightColor: '#8b5cf6',
+          borderTopColor: 'var(--accent-blue)',
+          borderRightColor: 'var(--accent-purple)',
           borderBottomColor: 'transparent',
           borderLeftColor: 'transparent',
         }}
       />
-      {label && <p className="text-sm text-gray-400">{label}</p>}
+      {label && <p className="text-sm text-[var(--text-muted)]">{label}</p>}
     </div>
   );
 
   if (mode === 'page') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,14,26,0.85)] backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(6,10,20,0.85)] backdrop-blur-sm">
         {spinner}
       </div>
     );

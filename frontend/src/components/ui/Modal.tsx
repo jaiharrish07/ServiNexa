@@ -27,14 +27,14 @@ const overlayVariants = {
 };
 
 const panelVariants = {
-  hidden: { opacity: 0, scale: 0.95, y: 20 },
+  hidden: { opacity: 0, scale: 0.97, y: 8 },
   visible: {
     opacity: 1,
     scale: 1,
     y: 0,
-    transition: { type: 'spring' as const, stiffness: 300, damping: 24 },
+    transition: { duration: 0.15, ease: [0.16, 1, 0.3, 1] },
   },
-  exit: { opacity: 0, scale: 0.95, y: 20, transition: { duration: 0.15 } },
+  exit: { opacity: 0, scale: 0.97, y: 8, transition: { duration: 0.1 } },
 } satisfies Record<string, unknown>;
 
 export const Modal = ({
@@ -74,11 +74,11 @@ export const Modal = ({
           initial="hidden"
           animate="visible"
           exit="hidden"
-          transition={{ duration: 0.2 }}
+          transition={{ duration: 0.12 }}
         >
           {/* Backdrop */}
           <motion.div
-            className="absolute inset-0 bg-[rgba(0,0,0,0.6)] backdrop-blur-sm"
+            className="absolute inset-0 bg-[rgba(0,0,0,0.55)]"
             onClick={onClose}
           />
 
@@ -89,7 +89,7 @@ export const Modal = ({
             animate="visible"
             exit="exit"
             className={clsx(
-              'relative w-full rounded-2xl border border-[rgba(59,130,246,0.2)] bg-gradient-to-br from-[#1a1f2e] to-[#111827] p-6 shadow-[0_0_40px_rgba(59,130,246,0.1)]',
+              'relative w-full rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-5 shadow-[0_16px_48px_-8px_rgba(0,0,0,0.5)]',
               sizeMap[size],
               className,
             )}
@@ -97,12 +97,12 @@ export const Modal = ({
             {/* Header */}
             {title && (
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-100">{title}</h2>
+                <h2 className="text-base font-semibold text-[var(--text-primary)] tracking-tight">{title}</h2>
                 <button
                   onClick={onClose}
-                  className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-[rgba(59,130,246,0.1)] hover:text-gray-200"
+                  className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors duration-150 hover:bg-[rgba(79,143,247,0.08)] hover:text-[var(--text-secondary)]"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </div>
             )}

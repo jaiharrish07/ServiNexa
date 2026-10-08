@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     'DQBH Industrial Equipment Activity Management platform — service requests, work orders, predictive maintenance, and real-time SLA tracking.',
 };
 
-export default function RootLayout({ children }: LayoutProps<'/'>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"

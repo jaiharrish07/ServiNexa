@@ -5,7 +5,6 @@ import { motion } from 'framer-motion';
 import {
   ClipboardList,
   AlertCircle,
-  Loader,
   CheckCircle2,
   Clock,
   Shield,
@@ -26,8 +25,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  AreaChart,
-  Area,
 } from 'recharts';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
@@ -75,9 +72,9 @@ const ALLOWED_ROLES = ['ADMIN', 'OPS_MANAGER'];
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-[var(--bg-elevated)] border border-[var(--border-primary)] backdrop-blur-xl rounded-xl px-4 py-2.5 shadow-2xl">
-      <p className="text-xs text-[var(--text-muted)] mb-0.5">{label}</p>
-      <p className="text-sm font-bold text-[var(--text-primary)]">{payload[0].value}</p>
+    <div className="bg-[var(--bg-elevated)] border border-[var(--border-primary)] backdrop-blur-xl rounded-lg px-3 py-2 shadow-2xl">
+      <p className="text-[10px] text-[var(--text-muted)] mb-0.5 uppercase tracking-wider">{label}</p>
+      <p className="text-sm font-bold text-[var(--text-primary)] tabular-nums">{payload[0].value}</p>
     </div>
   );
 }
@@ -85,12 +82,12 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 function PieTooltip({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number; payload: { fill: string } }> }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-[var(--bg-elevated)] border border-[var(--border-primary)] backdrop-blur-xl rounded-xl px-4 py-2.5 shadow-2xl">
+    <div className="bg-[var(--bg-elevated)] border border-[var(--border-primary)] backdrop-blur-xl rounded-lg px-3 py-2 shadow-2xl">
       <div className="flex items-center gap-2">
-        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: payload[0].payload.fill }} />
-        <p className="text-xs text-[var(--text-muted)]">{payload[0].name}</p>
+        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: payload[0].payload.fill }} />
+        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">{payload[0].name.replace(/_/g, ' ')}</p>
       </div>
-      <p className="text-sm font-bold text-[var(--text-primary)] mt-0.5">{payload[0].value}</p>
+      <p className="text-sm font-bold text-[var(--text-primary)] mt-0.5 tabular-nums">{payload[0].value}</p>
     </div>
   );
 }
@@ -173,7 +170,8 @@ export default function DashboardPage() {
   if (!hasAccess && !loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.2 }}
           className="glass-card p-10 text-center max-w-md">
           <Shield className="w-16 h-16 text-[var(--accent-amber)] mx-auto mb-4" />
           <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">Access Restricted</h2>
@@ -192,94 +190,53 @@ export default function DashboardPage() {
   const slaCompliancePct = stats.total_requests
     ? Math.round(((stats.completed ?? 0) / stats.total_requests) * 100) : 0;
 
-  const container = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
-  const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' as const } } };
-
   return (
-    <div className="space-y-8">
-      {/* ════════════ Hero Welcome Section ════════════ */}
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="relative overflow-hidden rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-card)] p-8"
-      >
-        <div className="absolute inset-0 mesh-gradient opacity-60" />
-        <div className="absolute top-0 left-[10%] right-[10%] h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-            >
-              <p className="text-sm text-[var(--text-muted)] mb-1">Welcome back,</p>
-              <h1 className="text-3xl lg:text-4xl font-bold text-[var(--text-primary)] tracking-tight">
-                {user?.full_name?.split(' ')[0] ?? 'Operator'}
-              </h1>
-              <p className="text-[var(--text-secondary)] mt-2 max-w-lg">
-                Here&apos;s your factory floor overview. {stats.open_requests > 0
-                  ? `${stats.open_requests} active request${stats.open_requests > 1 ? 's' : ''} need attention.`
-                  : 'All systems operating normally.'}
-              </p>
-            </motion.div>
-          </div>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.3, duration: 0.4 }}
-            className="flex items-center gap-4"
-          >
-            <Link
-              href="/service-requests"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white text-sm font-semibold shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 transition-shadow"
-            >
-              <Zap className="w-4 h-4" />
-              View Requests
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </motion.div>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+      className="space-y-6"
+    >
+      {/* ---- Hero Welcome ---- */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-card)] p-5 sm:p-6">
+        <div>
+          <p className="text-sm text-[var(--text-muted)] mb-0.5">Welcome back,</p>
+          <h1 className="text-2xl lg:text-3xl font-bold text-[var(--text-primary)] tracking-tight">
+            {user?.full_name?.split(' ')[0] ?? 'Operator'}
+          </h1>
+          <p className="text-sm text-[var(--text-secondary)] mt-1.5">
+            {stats.open_requests > 0
+              ? `${stats.open_requests} active request${stats.open_requests > 1 ? 's' : ''} need attention.`
+              : 'All systems operating normally.'}
+          </p>
         </div>
-        {/* Decorative elements */}
-        <div className="absolute -bottom-12 -right-12 w-40 h-40 rounded-full bg-[var(--accent-blue)]/[0.05] blur-3xl" />
-        <div className="absolute -top-8 right-1/4 w-32 h-32 rounded-full bg-[var(--accent-purple)]/[0.04] blur-3xl" />
-      </motion.div>
-
-      {/* ════════════ 6 Stat Cards ════════════ */}
-      <motion.div
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4"
-        variants={container} initial="hidden" animate="show"
-      >
-        <motion.div variants={item}>
-          <StatCard title="Total Requests" value={stats.total_requests} icon={<ClipboardList size={20} />} color="blue" />
-        </motion.div>
-        <motion.div variants={item}>
-          <StatCard title="Active" value={stats.open_requests} icon={<AlertCircle size={20} />} color="amber" />
-        </motion.div>
-        <motion.div variants={item}>
-          <StatCard title="In Progress" value={stats.in_progress} icon={<Activity size={20} />} color="purple" />
-        </motion.div>
-        <motion.div variants={item}>
-          <StatCard title="Completed" value={stats.completed} icon={<CheckCircle2 size={20} />} color="emerald" />
-        </motion.div>
-        <motion.div variants={item}>
-          <StatCard title="Avg Resolution" value={`${(stats.avg_resolution_hours ?? 0).toFixed(1)}h`} icon={<Clock size={20} />} color="cyan" />
-        </motion.div>
-        <motion.div variants={item}>
-          <StatCard title="SLA Compliance" value={`${slaCompliancePct}%`} icon={<Shield size={20} />} color={slaComplianceColor} />
-        </motion.div>
-      </motion.div>
-
-      {/* ════════════ Charts Row ════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Bar Chart — 3/5 width */}
-        <motion.div
-          className="lg:col-span-3 glass-card p-6"
-          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.25, duration: 0.5 }}
+        <Link
+          href="/service-requests"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white text-sm font-semibold shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 transition-shadow self-start sm:self-center"
         >
-          <div className="flex items-center justify-between mb-6">
+          <Zap className="w-4 h-4" />
+          View Requests
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+
+      {/* ---- 6 Stat Cards ---- */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <StatCard title="Total Requests" value={stats.total_requests} icon={<ClipboardList size={20} />} color="blue" />
+        <StatCard title="Active" value={stats.open_requests} icon={<AlertCircle size={20} />} color="amber" />
+        <StatCard title="In Progress" value={stats.in_progress} icon={<Activity size={20} />} color="purple" />
+        <StatCard title="Completed" value={stats.completed} icon={<CheckCircle2 size={20} />} color="emerald" />
+        <StatCard title="Avg Resolution" value={`${(stats.avg_resolution_hours ?? 0).toFixed(1)}h`} icon={<Clock size={20} />} color="cyan" />
+        <StatCard title="SLA Compliance" value={`${slaCompliancePct}%`} icon={<Shield size={20} />} color={slaComplianceColor} />
+      </div>
+
+      {/* ---- Charts Row ---- */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Bar Chart - 3/5 */}
+        <div className="lg:col-span-3 glass-card p-5 sm:p-6">
+          <div className="flex items-center justify-between mb-5">
             <div>
-              <h3 className="text-base font-semibold text-[var(--text-primary)]">Requests by Priority</h3>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Requests by Priority</h3>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">Distribution across severity levels</p>
             </div>
           </div>
@@ -300,15 +257,12 @@ export default function DashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </motion.div>
+        </div>
 
-        {/* Pie Chart — 2/5 width */}
-        <motion.div
-          className="lg:col-span-2 glass-card p-6"
-          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3, duration: 0.5 }}
-        >
+        {/* Pie Chart - 2/5 */}
+        <div className="lg:col-span-2 glass-card p-5 sm:p-6">
           <div className="mb-4">
-            <h3 className="text-base font-semibold text-[var(--text-primary)]">Status Distribution</h3>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Status Distribution</h3>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">Current request pipeline</p>
           </div>
           <div className="h-64">
@@ -328,7 +282,7 @@ export default function DashboardPage() {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          {/* Legend below pie */}
+          {/* Legend */}
           <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2">
             {statusData.map(entry => (
               <div key={entry.name} className="flex items-center gap-1.5">
@@ -337,14 +291,14 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
-        </motion.div>
+        </div>
       </div>
 
-      {/* ════════════ SLA Heatmap ════════════ */}
-      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.5 }}>
+      {/* ---- SLA Heatmap ---- */}
+      <div>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
           <div>
-            <h2 className="text-xl font-bold text-[var(--text-primary)]">SLA Heatmap</h2>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">SLA Heatmap</h2>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">Real-time service level compliance</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -371,20 +325,20 @@ export default function DashboardPage() {
         </div>
 
         {/* SLA Summary Pills */}
-        <div className="flex flex-wrap gap-2.5 mb-6">
+        <div className="flex flex-wrap gap-2 mb-5">
           {(Object.entries(slaSummary) as [StatusColor, number][]).map(([status, count]) => (
             <button
               key={status}
               onClick={() => setSlaFilter(slaFilter === status ? 'ALL' : status)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium transition-all duration-200 border ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 border ${
                 slaFilter === status
                   ? 'border-white/20 bg-white/[0.06] shadow-lg'
                   : 'border-[var(--border-primary)] bg-[var(--bg-card)] hover:bg-[var(--bg-card-hover)]'
               }`}
             >
-              <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: SLA_COLORS[status] }} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: SLA_COLORS[status] }} />
               <span className="text-[var(--text-secondary)]">{status}</span>
-              <span className="font-bold text-[var(--text-primary)] ml-0.5">{count}</span>
+              <span className="font-bold text-[var(--text-primary)] tabular-nums">{count}</span>
             </button>
           ))}
         </div>
@@ -394,19 +348,15 @@ export default function DashboardPage() {
             <p className="text-[var(--text-muted)]">No service requests match the current filters.</p>
           </div>
         ) : (
-          <motion.div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-            variants={container} initial="hidden" animate="show"
-          >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {filteredHeatmap.map(card => {
               const slaColor = SLA_COLORS[card.sla_status as StatusColor] || '#4e6080';
               const pctClamped = Math.min(100, Math.max(0, card.pct_elapsed));
 
               return (
-                <motion.div
+                <div
                   key={card.service_request_id}
-                  variants={item}
-                  className="glass-card p-4 relative overflow-hidden group"
+                  className="glass-card p-3.5 relative overflow-hidden group"
                   style={card.elevated_alert ? {
                     boxShadow: `0 0 24px -4px rgba(248,113,113,0.3)`,
                     borderColor: 'rgba(248,113,113,0.4)',
@@ -415,42 +365,42 @@ export default function DashboardPage() {
                 >
                   <div className="absolute top-0 left-0 right-0 h-0.5" style={{ background: `linear-gradient(to right, ${slaColor}, transparent)` }} />
 
-                  <div className="flex items-start justify-between mt-1">
-                    <div>
+                  <div className="flex items-start justify-between mt-0.5">
+                    <div className="min-w-0">
                       <p className="text-sm font-mono font-semibold text-[var(--text-primary)]">{card.request_number}</p>
-                      <p className="text-xs text-[var(--text-secondary)] mt-0.5 truncate max-w-[160px]">{card.machine_name || 'No machine'}</p>
+                      <p className="text-xs text-[var(--text-secondary)] mt-0.5 truncate">{card.machine_name || 'No machine'}</p>
                     </div>
                     <Badge variant={PRIORITY_BADGE_VARIANT[card.priority] || 'default'}>{card.priority}</Badge>
                   </div>
 
-                  <div className="mt-3 text-xs text-[var(--text-muted)]">{card.assigned_technician || 'Unassigned'}</div>
+                  <div className="mt-2 text-xs text-[var(--text-muted)]">{card.assigned_technician || 'Unassigned'}</div>
 
-                  <div className="mt-3">
-                    <div className="flex justify-between text-[10px] text-[var(--text-muted)] mb-1.5">
+                  <div className="mt-2.5">
+                    <div className="flex justify-between text-[10px] text-[var(--text-muted)] mb-1">
                       <span>SLA Progress</span>
-                      <span className="font-mono font-semibold" style={{ color: slaColor }}>{Math.round(pctClamped)}%</span>
+                      <span className="font-mono font-semibold tabular-nums" style={{ color: slaColor }}>{Math.round(pctClamped)}%</span>
                     </div>
-                    <div className="w-full h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
+                    <div className="w-full h-1 rounded-full bg-white/[0.04] overflow-hidden">
                       <div className="h-full rounded-full transition-all duration-700 ease-out"
                         style={{ width: `${pctClamped}%`, background: `linear-gradient(to right, ${slaColor}cc, ${slaColor})` }} />
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 mt-2.5">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: slaColor }} />
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: slaColor }} />
                     <span className="text-[10px] font-semibold" style={{ color: slaColor }}>{card.sla_status}</span>
                     {card.time_remaining_mins > 0 && (
-                      <span className="text-[10px] text-[var(--text-muted)] ml-auto font-mono">
+                      <span className="text-[10px] text-[var(--text-muted)] ml-auto font-mono tabular-nums">
                         {Math.round(card.time_remaining_mins / 60)}h left
                       </span>
                     )}
                   </div>
-                </motion.div>
+                </div>
               );
             })}
-          </motion.div>
+          </div>
         )}
-      </motion.div>
+      </div>
 
       <style>{`
         @keyframes pulse-red-border {
@@ -458,6 +408,6 @@ export default function DashboardPage() {
           50% { border-color: rgba(248,113,113,0.5); box-shadow: 0 0 40px -4px rgba(248,113,113,0.3); }
         }
       `}</style>
-    </div>
+    </motion.div>
   );
 }

@@ -18,13 +18,7 @@
   --accent-emerald: #34d399;
   --accent-amber: #fbbf24;
   --accent-red: #f87171;
-  --surface-glass: linear-gradient(
-    135deg,
-    rgba(15, 22, 42, 0.75) 0%,
-    rgba(10, 16, 32, 0.55) 50%,
-    rgba(15, 22, 42, 0.65) 100%
-  );
-  --noise: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  --surface-glass: rgba(13, 19, 35, 0.65);
 }
 
 @theme inline {
@@ -48,33 +42,18 @@ body {
 
 .glass-card {
   background: var(--surface-glass);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-primary);
-  border-radius: 16px;
+  border-radius: 12px;
   position: relative;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glass-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--noise);
-  pointer-events: none;
-  z-index: 0;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .glass-card:hover {
-  border-color: rgba(79, 143, 247, 0.25);
-  box-shadow:
-    0 0 0 1px rgba(79, 143, 247, 0.08),
-    0 8px 40px -8px rgba(0, 0, 0, 0.5),
-    0 0 60px -20px rgba(79, 143, 247, 0.1);
+  border-color: rgba(79, 143, 247, 0.22);
+  box-shadow: 0 4px 24px -8px rgba(0, 0, 0, 0.4);
 }
-
-.glass-card > * { position: relative; z-index: 1; }
 
 /* ─── Gradient text ─── */
 
@@ -104,13 +83,13 @@ body {
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-10px) rotate(1deg); }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(79, 143, 247, 0.15); }
-  50% { box-shadow: 0 0 50px rgba(79, 143, 247, 0.3); }
+  0%, 100% { box-shadow: 0 0 12px rgba(79, 143, 247, 0.1); }
+  50% { box-shadow: 0 0 24px rgba(79, 143, 247, 0.18); }
 }
 
 @keyframes shimmer {
@@ -119,7 +98,7 @@ body {
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(16px); }
+  from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -129,30 +108,30 @@ body {
 }
 
 @keyframes countUp {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes borderGlow {
-  0%, 100% { border-color: rgba(79, 143, 247, 0.15); }
-  50% { border-color: rgba(79, 143, 247, 0.35); }
+  0%, 100% { border-color: rgba(79, 143, 247, 0.12); }
+  50% { border-color: rgba(79, 143, 247, 0.24); }
 }
 
 @keyframes orb-float-1 {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(40px, -30px) scale(1.1); }
-  66% { transform: translate(-20px, 20px) scale(0.95); }
+  33% { transform: translate(20px, -15px) scale(1.04); }
+  66% { transform: translate(-10px, 10px) scale(0.98); }
 }
 
 @keyframes orb-float-2 {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(-50px, 20px) scale(1.05); }
-  66% { transform: translate(30px, -40px) scale(0.9); }
+  33% { transform: translate(-25px, 10px) scale(1.02); }
+  66% { transform: translate(15px, -20px) scale(0.96); }
 }
 
 .animate-float { animation: float 6s ease-in-out infinite; }
 .animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
-.animate-slide-up { animation: slideUp 0.5s ease-out forwards; }
+.animate-slide-up { animation: slideUp 0.4s ease-out forwards; }
 .animate-border-glow { animation: borderGlow 3s ease-in-out infinite; }
 
 /* ─── Priority / SLA badges ─── */
@@ -172,9 +151,8 @@ body {
 
 .mesh-gradient {
   background:
-    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(79, 143, 247, 0.08), transparent),
-    radial-gradient(ellipse 60% 60% at 80% 20%, rgba(167, 139, 250, 0.06), transparent),
-    radial-gradient(ellipse 50% 70% at 50% 80%, rgba(34, 211, 238, 0.04), transparent);
+    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(79, 143, 247, 0.05), transparent),
+    radial-gradient(ellipse 60% 60% at 80% 20%, rgba(167, 139, 250, 0.04), transparent);
 }
 
 /* ─── Ambient orbs ─── */
@@ -188,18 +166,18 @@ body {
 }
 
 .orb-blue {
-  background: rgba(79, 143, 247, 0.12);
-  animation: orb-float-1 15s ease-in-out infinite;
+  background: rgba(79, 143, 247, 0.06);
+  animation: orb-float-1 20s ease-in-out infinite;
 }
 
 .orb-purple {
-  background: rgba(167, 139, 250, 0.1);
-  animation: orb-float-2 18s ease-in-out infinite;
+  background: rgba(167, 139, 250, 0.05);
+  animation: orb-float-2 24s ease-in-out infinite;
 }
 
 .orb-cyan {
-  background: rgba(34, 211, 238, 0.08);
-  animation: orb-float-1 20s ease-in-out infinite reverse;
+  background: rgba(34, 211, 238, 0.04);
+  animation: orb-float-1 28s ease-in-out infinite reverse;
 }
 
 /* ─── Input focus ring ─── */
@@ -210,6 +188,27 @@ body {
 .input-focus:focus {
   border-color: rgba(79, 143, 247, 0.5);
   box-shadow: 0 0 0 3px rgba(79, 143, 247, 0.1), 0 0 20px -4px rgba(79, 143, 247, 0.15);
+}
+
+/* ─── Skeleton shimmer ─── */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(56, 80, 130, 0.08) 25%,
+    rgba(56, 80, 130, 0.16) 50%,
+    rgba(56, 80, 130, 0.08) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* ─── Focus-visible ring for accessibility ─── */
+
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
 }
 
 /* ─── Scrollbar chrome ─── */

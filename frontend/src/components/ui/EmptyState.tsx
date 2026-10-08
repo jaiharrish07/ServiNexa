@@ -21,30 +21,30 @@ export const EmptyState = ({
 }: EmptyStateProps) => {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={{ duration: 0.3 }}
       className={clsx(
         'flex flex-col items-center justify-center py-16 text-center',
         className,
       )}
     >
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[rgba(59,130,246,0.1)] text-[#3b82f6]">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[rgba(79,143,247,0.08)] text-[var(--accent-blue)]">
         {icon}
       </div>
 
-      <h3 className="text-lg font-semibold text-gray-200">{title}</h3>
+      <h3 className="text-base font-semibold text-[var(--text-primary)]">{title}</h3>
 
       {description && (
-        <p className="mt-2 max-w-md text-sm text-gray-400">{description}</p>
+        <p className="mt-1.5 max-w-sm text-sm text-[var(--text-muted)]">{description}</p>
       )}
 
       {action && (
-        <div className="mt-6">
+        <div className="mt-5">
           {typeof action === 'object' && action !== null && 'label' in action ? (
             <button
               onClick={(action as { label: string; onClick: () => void }).onClick}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] px-5 py-2.5 text-sm font-medium text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-shadow hover:shadow-[0_0_30px_rgba(59,130,246,0.5)]"
+              className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent-blue)] px-4 py-2 text-sm font-medium text-white transition-all duration-150 hover:brightness-110"
             >
               {(action as { label: string; onClick: () => void }).label}
             </button>
