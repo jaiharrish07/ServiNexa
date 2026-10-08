@@ -101,6 +101,13 @@ router.delete(
     const { data: doc } = await supabase.from('documents').select('*').eq('id', id).single();
     if (!doc) return res.status(404).json({ error: 'Document not found' });
 
+    const role = req.user!.role;
+    const isOwner = doc.uploaded_by === req.user!.id;
+    const isManager = role === 'ADMIN' || role === 'OPS_MANAGER';
+    if (!isOwner && !isManager) {
+      return res.status(403).json({ error: 'Only the uploader or a manager can delete documents' });
+    }
+
     if (doc.file_url) {
       const urlParts = doc.file_url.split(`/${BUCKET}/`);
       if (urlParts[1]) {

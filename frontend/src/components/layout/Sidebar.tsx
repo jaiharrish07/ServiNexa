@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 import { api } from '@/lib/api';
+import { useRealtimeRefresh } from '@/hooks/useWebSocket';
 
 type NavItem = { href: string; label: string; icon: any; roles?: string[] };
 
@@ -98,18 +99,21 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
+  const fetchUnreadCount = useCallback(() => {
     const token = api.getToken();
     if (!token) return;
-    let cancelled = false;
     api
       .get<{ unread_count?: number }>('/api/notifications/unread-count')
-      .then((data) => {
-        if (!cancelled) setUnreadCount(data?.unread_count ?? 0);
-      })
+      .then((data) => setUnreadCount(data?.unread_count ?? 0))
       .catch(() => {});
-    return () => { cancelled = true; };
-  }, [user]);
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadCount();
+  }, [user, fetchUnreadCount]);
+
+  // Refresh unread count when a notification arrives via WebSocket
+  useRealtimeRefresh('notification', fetchUnreadCount);
 
   // Close mobile sidebar on route change
   useEffect(() => {

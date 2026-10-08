@@ -18,6 +18,7 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
+import { useRealtimeRefresh } from '@/hooks/useWebSocket';
 import type { ServiceRequest, Site, Machine } from '@/lib/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -44,6 +45,17 @@ const STATUS_OPTIONS = [
   'VERIFIED',
   'CLOSED',
   'EXCEPTION',
+] as const;
+
+// Simplified status options for customers
+const CUSTOMER_STATUS_OPTIONS = [
+  'ALL',
+  'SUBMITTED',
+  'PENDING_APPROVAL',
+  'APPROVED',
+  'IN_PROGRESS',
+  'COMPLETED',
+  'CLOSED',
 ] as const;
 
 const PRIORITY_OPTIONS = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
@@ -130,6 +142,7 @@ export default function ServiceRequestsPage() {
   const [aiSuggesting, setAiSuggesting] = useState(false);
 
   const canCreate = user && CAN_CREATE_ROLES.includes(user.role);
+  const isCustomer = user?.role === 'CUSTOMER';
 
   const autoClassify = async () => {
     if (!form.title && !form.description) {
@@ -173,6 +186,9 @@ export default function ServiceRequestsPage() {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  // Refresh list when a service request changes via WebSocket
+  useRealtimeRefresh('sr_update', fetchRequests);
 
   // ---- Fetch sites (on modal open) ----
   useEffect(() => {
@@ -256,10 +272,15 @@ export default function ServiceRequestsPage() {
       >
         <div>
           <h1 className="text-3xl font-bold gradient-text">Service Requests</h1>
-          <p className="text-[var(--text-secondary)] mt-1">Manage and track all service requests</p>
+          <p className="text-[var(--text-secondary)] mt-1">
+            {isCustomer ? 'Track your service requests' : 'Manage and track all service requests'}
+          </p>
         </div>
         {canCreate && (
-          <Button onClick={() => setShowModal(true)}>
+          <Button
+            onClick={() => setShowModal(true)}
+            className={isCustomer ? 'px-6 py-3 text-base shadow-lg shadow-blue-500/20' : ''}
+          >
             <Plus className="w-4 h-4 mr-2" />
             New Request
           </Button>
@@ -288,7 +309,7 @@ export default function ServiceRequestsPage() {
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
           className={selectClasses}
         >
-          {STATUS_OPTIONS.map((s) => (
+          {(isCustomer ? CUSTOMER_STATUS_OPTIONS : STATUS_OPTIONS).map((s) => (
             <option key={s} value={s}>{s === 'ALL' ? 'All Statuses' : s.replace(/_/g, ' ')}</option>
           ))}
         </select>

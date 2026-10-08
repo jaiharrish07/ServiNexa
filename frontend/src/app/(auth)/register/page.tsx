@@ -133,7 +133,7 @@ function FloatingInput({
   autoComplete,
   id,
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   type?: string;
   value: string;

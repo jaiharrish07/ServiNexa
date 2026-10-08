@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -28,6 +29,11 @@ import {
   Image,
   File,
   ClipboardList,
+  Eye,
+  Zap,
+  Activity,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -40,11 +46,17 @@ import type {
   AuditLog,
   Bid,
 } from '@/lib/types';
+import type { MachineComponent, SensorData } from '@/components/three/MachineModel';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+
+const MachineModel = dynamic(
+  () => import('@/components/three/MachineModel'),
+  { ssr: false, loading: () => <div className="h-[450px] flex items-center justify-center"><LoadingSpinner /></div> }
+);
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -132,7 +144,37 @@ interface CompletionReport {
   ai_classification: any;
 }
 
-type TabKey = 'overview' | 'workorders' | 'bidding' | 'ai' | 'audit' | 'documents' | 'report';
+interface VisualDiagnosis {
+  id: string;
+  service_request_id: string;
+  machine_type: string;
+  affected_component_id: string;
+  component_name: string;
+  ai_analysis: any;
+  status: string;
+  created_at: string;
+}
+
+interface ThreeDData {
+  components: MachineComponent[];
+  highlight: { component_id: string; component_name: string };
+}
+
+interface TechDiagnosis {
+  id: string;
+  technician_id: string;
+  diagnosis_text: string;
+  proposed_solution: string;
+  parts_needed: any[];
+  estimated_cost?: number;
+  estimated_hours?: number;
+  confidence_level: string;
+  is_selected: boolean;
+  submitted_at: string;
+  technicians?: { employee_code: string; users?: { full_name: string } };
+}
+
+type TabKey = 'overview' | 'workorders' | 'bidding' | 'diagnosis' | 'ai' | 'audit' | 'documents' | 'report';
 
 // ---------------------------------------------------------------------------
 // Main Page
@@ -155,6 +197,18 @@ export default function ServiceRequestDetailPage() {
   const [bids, setBids] = useState<Bid[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [tabLoading, setTabLoading] = useState(false);
+
+  // 3D Diagnosis state
+  const [visDiagnosis, setVisDiagnosis] = useState<VisualDiagnosis | null>(null);
+  const [threeData, setThreeData] = useState<ThreeDData | null>(null);
+  const [sensorData, setSensorData] = useState<SensorData | undefined>();
+  const [techDiagnoses, setTechDiagnoses] = useState<TechDiagnosis[]>([]);
+  const [selectedComponent, setSelectedComponent] = useState<MachineComponent | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [expandedAnalysis, setExpandedAnalysis] = useState(true);
+  const [showDiagForm, setShowDiagForm] = useState(false);
+  const [submittingDiag, setSubmittingDiag] = useState(false);
+  const [diagForm, setDiagForm] = useState({ diagnosis_text: '', proposed_solution: '', estimated_hours: '', estimated_cost: '', confidence_level: 'MEDIUM' });
 
   // Modals
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -212,6 +266,26 @@ export default function ServiceRequestDetailPage() {
           case 'audit': {
             const aRes = await api.get<{ audit_logs?: AuditLog[] }>(`/api/audit?entity_type=service_request&entity_id=${id}`);
             setAuditLogs(aRes?.audit_logs ?? []);
+            break;
+          }
+          case 'diagnosis': {
+            if (request.machine_id) {
+              api.get<any>(`/api/machines/${request.machine_id}`).then((m: any) => {
+                const machine = m?.machine ?? m;
+                if (machine) setSensorData({ air_temp: machine.air_temp, process_temp: machine.process_temp, rotational_speed: machine.rotational_speed, torque: machine.torque, tool_wear: machine.tool_wear });
+              }).catch(() => {});
+              try {
+                const vdRes = await api.get<any>(`/api/visual-diagnoses/${id}`);
+                const vd = vdRes?.visual_diagnosis ?? null;
+                setVisDiagnosis(vd);
+                if (vd?.id) {
+                  const tdRes = await api.get<any>(`/api/visual-diagnoses/${vd.id}/3d-data`);
+                  setThreeData(tdRes);
+                  const techRes = await api.get<any>(`/api/technician-diagnoses/${vd.id}`);
+                  setTechDiagnoses(techRes?.technician_diagnoses ?? []);
+                }
+              } catch { setVisDiagnosis(null); }
+            }
             break;
           }
           case 'documents': {
@@ -391,6 +465,7 @@ export default function ServiceRequestDetailPage() {
     { key: 'overview', label: 'Overview', icon: FileText },
     { key: 'workorders', label: 'Work Orders', icon: Cpu },
     { key: 'bidding', label: 'Bidding', icon: Gavel },
+    ...(request.machine_id ? [{ key: 'diagnosis' as TabKey, label: '3D Diagnosis', icon: Eye }] : []),
     { key: 'documents', label: 'Documents', icon: File },
     { key: 'ai', label: 'AI Analysis', icon: Brain },
     { key: 'audit', label: 'Audit Trail', icon: History },
@@ -803,6 +878,228 @@ export default function ServiceRequestDetailPage() {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* ---- 3D DIAGNOSIS ---- */}
+                {activeTab === 'diagnosis' && request.machine_id && (
+                  <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+                    {/* 3D Viewer */}
+                    <div className="xl:col-span-3">
+                      <Card className="overflow-hidden">
+                        <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                              {request.machines?.name ?? 'Machine'} — 3D View
+                            </h3>
+                            <p className="text-xs text-[var(--text-muted)]">
+                              {request.machines?.code} · {request.machines?.type}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {visDiagnosis && (
+                              <Badge variant="info">{(visDiagnosis.status ?? '').replace(/_/g, ' ')}</Badge>
+                            )}
+                            {(user?.role === 'ADMIN' || user?.role === 'OPS_MANAGER') && (
+                              <Button
+                                size="sm"
+                                onClick={async () => {
+                                  setDiagnosing(true);
+                                  try {
+                                    const res = await api.post<any>('/api/visual-diagnoses', { service_request_id: id });
+                                    const vd = res?.visual_diagnosis;
+                                    toast.success('AI diagnosis complete');
+                                    setVisDiagnosis(vd);
+                                    if (vd?.id) {
+                                      const td = await api.get<any>(`/api/visual-diagnoses/${vd.id}/3d-data`);
+                                      setThreeData(td);
+                                    }
+                                  } catch (err: any) { toast.error(err?.message || 'Diagnosis failed'); }
+                                  finally { setDiagnosing(false); }
+                                }}
+                                disabled={diagnosing}
+                              >
+                                {diagnosing ? 'Analyzing...' : visDiagnosis ? 'Re-analyze' : <><Zap className="w-3.5 h-3.5 mr-1" /> Run AI Diagnosis</>}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="relative bg-gradient-to-b from-[#0a0e1a] to-[#0d1117]">
+                          <MachineModel
+                            health={visDiagnosis ? (visDiagnosis.ai_analysis?.severity_assessment === 'CRITICAL' ? 20 : visDiagnosis.ai_analysis?.severity_assessment === 'HIGH' ? 40 : 70) : 85}
+                            machineType={request.machines?.type}
+                            sensorData={sensorData}
+                            components={threeData?.components ?? []}
+                            highlightId={threeData?.highlight?.component_id}
+                            onComponentClick={(c) => setSelectedComponent(c)}
+                            className="h-[450px] w-full"
+                          />
+                          <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2 text-[10px] space-y-1">
+                            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]" /><span className="text-red-400">Faulty</span></div>
+                            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500" /><span className="text-blue-400">Selected</span></div>
+                            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-slate-500" /><span className="text-slate-400">Normal</span></div>
+                          </div>
+                        </div>
+                        {selectedComponent && (
+                          <div className="p-3 border-t border-white/[0.06] bg-blue-500/5">
+                            <p className="text-xs font-semibold text-blue-400 flex items-center gap-1.5">
+                              <Activity className="w-3.5 h-3.5" /> {selectedComponent.component_name}
+                            </p>
+                            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                              ID: {selectedComponent.component_id} · Position: ({selectedComponent.coord_x.toFixed(1)}, {selectedComponent.coord_y.toFixed(1)}, {selectedComponent.coord_z.toFixed(1)})
+                            </p>
+                          </div>
+                        )}
+                        {/* Sensor data panel */}
+                        {sensorData && (
+                          <div className="p-4 border-t border-white/[0.06]">
+                            <p className="text-xs font-semibold text-[var(--text-muted)] mb-2">Live Sensor Readings</p>
+                            <div className="grid grid-cols-5 gap-2">
+                              {[
+                                { label: 'Air Temp', value: sensorData.air_temp, unit: '°C' },
+                                { label: 'Process Temp', value: sensorData.process_temp, unit: '°C' },
+                                { label: 'Speed', value: sensorData.rotational_speed, unit: 'RPM' },
+                                { label: 'Torque', value: sensorData.torque, unit: 'Nm' },
+                                { label: 'Tool Wear', value: sensorData.tool_wear, unit: 'min' },
+                              ].map(s => (
+                                <div key={s.label} className="text-center p-2 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                                  <p className="text-lg font-bold text-[var(--text-primary)]">{s.value ?? '—'}</p>
+                                  <p className="text-[10px] text-[var(--text-muted)]">{s.label} ({s.unit})</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </Card>
+                    </div>
+
+                    {/* Right panel — AI Analysis + Tech Diagnosis */}
+                    <div className="xl:col-span-2 space-y-4">
+                      {visDiagnosis && visDiagnosis.ai_analysis && (
+                        <Card className="overflow-hidden">
+                          <button onClick={() => setExpandedAnalysis(!expandedAnalysis)} className="w-full p-4 flex items-center justify-between border-b border-white/[0.06]">
+                            <div className="flex items-center gap-2">
+                              <Cpu className="w-4 h-4 text-purple-400" />
+                              <span className="text-sm font-semibold text-[var(--text-primary)]">AI Analysis</span>
+                            </div>
+                            {expandedAnalysis ? <ChevronUp className="w-4 h-4 text-[var(--text-muted)]" /> : <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />}
+                          </button>
+                          <AnimatePresence>
+                            {expandedAnalysis && (
+                              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                                <div className="p-4 space-y-3">
+                                  <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/5 border border-red-500/10">
+                                    <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="text-xs font-semibold text-red-400">Affected Component</p>
+                                      <p className="text-sm text-[var(--text-primary)]">{visDiagnosis.component_name}</p>
+                                      <p className="text-xs text-[var(--text-muted)] font-mono">{visDiagnosis.affected_component_id}</p>
+                                    </div>
+                                  </div>
+                                  {visDiagnosis.ai_analysis.severity_assessment && (
+                                    <div className="flex items-center justify-between py-2 border-b border-white/[0.04]">
+                                      <span className="text-xs text-[var(--text-muted)]">Severity</span>
+                                      <Badge variant={visDiagnosis.ai_analysis.severity_assessment === 'CRITICAL' ? 'danger' : visDiagnosis.ai_analysis.severity_assessment === 'HIGH' ? 'warning' : 'info'}>
+                                        {visDiagnosis.ai_analysis.severity_assessment}
+                                      </Badge>
+                                    </div>
+                                  )}
+                                  {visDiagnosis.ai_analysis.failure_analysis && (
+                                    <div>
+                                      <p className="text-xs font-medium text-[var(--text-muted)] mb-1">Failure Analysis</p>
+                                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{visDiagnosis.ai_analysis.failure_analysis}</p>
+                                    </div>
+                                  )}
+                                  {visDiagnosis.ai_analysis.diagnostic_questions?.length > 0 && (
+                                    <div>
+                                      <p className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Diagnostic Questions</p>
+                                      <ul className="space-y-1">
+                                        {visDiagnosis.ai_analysis.diagnostic_questions.map((q: string, i: number) => (
+                                          <li key={i} className="text-xs text-[var(--text-secondary)] flex items-start gap-1.5">
+                                            <span className="text-purple-400 font-mono mt-0.5">{i + 1}.</span>{q}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </Card>
+                      )}
+
+                      {/* Technician diagnosis form */}
+                      {user?.role === 'TECHNICIAN' && visDiagnosis && (
+                        <Card className="p-4">
+                          {!showDiagForm ? (
+                            <Button onClick={() => setShowDiagForm(true)} className="w-full text-sm"><Send className="w-4 h-4 mr-1" /> Submit Your Diagnosis</Button>
+                          ) : (
+                            <div className="space-y-3">
+                              <h4 className="text-sm font-semibold text-[var(--text-primary)]">Remote Diagnosis</h4>
+                              <textarea placeholder="Your diagnosis..." value={diagForm.diagnosis_text} onChange={(e) => setDiagForm({ ...diagForm, diagnosis_text: e.target.value })} className="w-full p-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] resize-none h-20 focus:outline-none focus:border-blue-500/40" />
+                              <textarea placeholder="Proposed solution..." value={diagForm.proposed_solution} onChange={(e) => setDiagForm({ ...diagForm, proposed_solution: e.target.value })} className="w-full p-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] resize-none h-20 focus:outline-none focus:border-blue-500/40" />
+                              <div className="grid grid-cols-2 gap-2">
+                                <input type="number" placeholder="Est. hours" value={diagForm.estimated_hours} onChange={(e) => setDiagForm({ ...diagForm, estimated_hours: e.target.value })} className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500/40" />
+                                <input type="number" placeholder="Est. cost (₹)" value={diagForm.estimated_cost} onChange={(e) => setDiagForm({ ...diagForm, estimated_cost: e.target.value })} className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500/40" />
+                              </div>
+                              <div className="flex gap-2">
+                                <Button onClick={async () => {
+                                  setSubmittingDiag(true);
+                                  try {
+                                    await api.post('/api/technician-diagnoses', { visual_diagnosis_id: visDiagnosis.id, diagnosis_text: diagForm.diagnosis_text, proposed_solution: diagForm.proposed_solution, estimated_hours: diagForm.estimated_hours ? Number(diagForm.estimated_hours) : undefined, estimated_cost: diagForm.estimated_cost ? Number(diagForm.estimated_cost) : undefined, confidence_level: diagForm.confidence_level });
+                                    toast.success('Diagnosis submitted');
+                                    setShowDiagForm(false);
+                                    setDiagForm({ diagnosis_text: '', proposed_solution: '', estimated_hours: '', estimated_cost: '', confidence_level: 'MEDIUM' });
+                                  } catch (err: any) { toast.error(err?.message || 'Failed'); }
+                                  finally { setSubmittingDiag(false); }
+                                }} disabled={submittingDiag || !diagForm.diagnosis_text || !diagForm.proposed_solution} className="flex-1 text-xs">
+                                  {submittingDiag ? 'Submitting...' : 'Submit'}
+                                </Button>
+                                <Button variant="secondary" onClick={() => setShowDiagForm(false)} className="text-xs">Cancel</Button>
+                              </div>
+                            </div>
+                          )}
+                        </Card>
+                      )}
+
+                      {/* Expert diagnoses list */}
+                      {(user?.role === 'ADMIN' || user?.role === 'OPS_MANAGER') && techDiagnoses.length > 0 && (
+                        <Card className="overflow-hidden">
+                          <div className="p-4 border-b border-white/[0.06]">
+                            <h4 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                              <User className="w-4 h-4 text-emerald-400" /> Expert Diagnoses ({techDiagnoses.length})
+                            </h4>
+                          </div>
+                          <div className="divide-y divide-white/[0.04] max-h-[300px] overflow-y-auto">
+                            {techDiagnoses.map((td) => (
+                              <div key={td.id} className={`p-3 ${td.is_selected ? 'bg-emerald-500/5 border-l-2 border-emerald-500' : ''}`}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-semibold text-[var(--text-primary)]">{td.technicians?.users?.full_name ?? td.technicians?.employee_code ?? 'Technician'}</span>
+                                  {td.is_selected ? (
+                                    <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-0.5" /> Selected</Badge>
+                                  ) : (
+                                    <Button variant="secondary" onClick={async () => { try { await api.put(`/api/technician-diagnoses/${td.id}/select`); toast.success('Selected'); const res = await api.get<any>(`/api/technician-diagnoses/${visDiagnosis!.id}`); setTechDiagnoses(res?.technician_diagnoses ?? []); } catch (e: any) { toast.error(e?.message || 'Failed'); } }} className="text-[11px] py-0.5 px-2">Select</Button>
+                                  )}
+                                </div>
+                                <p className="text-xs text-[var(--text-secondary)]">{td.diagnosis_text}</p>
+                                <p className="text-xs text-blue-400 mt-1">Solution: {td.proposed_solution}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </Card>
+                      )}
+
+                      {!visDiagnosis && (
+                        <Card className="p-8 text-center">
+                          <Eye className="w-10 h-10 text-purple-500/40 mx-auto mb-3" />
+                          <p className="text-sm font-medium text-[var(--text-primary)]">No Diagnosis Yet</p>
+                          <p className="text-xs text-[var(--text-muted)] mt-1">
+                            {(user?.role === 'ADMIN' || user?.role === 'OPS_MANAGER') ? 'Click "Run AI Diagnosis" to analyze this machine' : 'Waiting for ops to initiate AI diagnosis'}
+                          </p>
+                        </Card>
+                      )}
+                    </div>
                   </div>
                 )}
 

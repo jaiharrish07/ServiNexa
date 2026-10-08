@@ -100,6 +100,7 @@ export default function MachinesPage() {
   });
 
   const canManage = user?.role === 'ADMIN' || user?.role === 'OPS_MANAGER';
+  const isCustomer = user?.role === 'CUSTOMER';
 
   useEffect(() => {
     loadData();
@@ -189,7 +190,11 @@ export default function MachinesPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-100">Machines</h1>
-          <p className="text-gray-400 text-sm mt-1">{machines.length} machines registered</p>
+          <p className="text-gray-400 text-sm mt-1">
+            {isCustomer
+              ? `${machines.length} machines at your site — check health before raising a request`
+              : `${machines.length} machines registered`}
+          </p>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:flex-initial">
@@ -313,6 +318,18 @@ export default function MachinesPage() {
                                   <Edit2 className="w-3.5 h-3.5 mr-1.5" />
                                   Edit Machine
                                 </Button>
+                              </div>
+                            )}
+                            {isCustomer && health < 75 && (
+                              <div className="pt-2">
+                                <a
+                                  href="/service-requests"
+                                  onClick={e => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                                >
+                                  <Wrench className="w-3.5 h-3.5" />
+                                  Raise Service Request
+                                </a>
                               </div>
                             )}
                           </div>

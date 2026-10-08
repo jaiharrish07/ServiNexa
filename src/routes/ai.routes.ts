@@ -95,9 +95,17 @@ router.post(
       }
 
       const stub = predictStub(sensorData);
+      const healthScore = Math.round((1 - stub.failure_probability) * 100);
       return res.json({
         ...stub,
+        health_score: healthScore,
         machine_code: machine.code,
+        recommendations: [
+          stub.recommended_action,
+          ...stub.failure_modes
+            .filter(m => m.mode !== 'No significant risk detected')
+            .map(m => `Monitor for ${m.mode} (${Math.round(m.probability * 100)}% probability)`),
+        ],
         source: 'stub',
       });
     } catch (err: unknown) {
@@ -230,9 +238,76 @@ router.post(
         return res.json({ ...aiResult.data, source: 'ai' });
       }
 
+      const anomalies: Array<{ type: string; severity: string; description: string; affected_items: string[] }> = [];
+      const reqs = requests || [];
+
+      const catCounts = new Map<string, string[]>();
+      const machineCounts = new Map<string, string[]>();
+      let overdueCount = 0;
+      let criticalCount = 0;
+      const now = new Date();
+
+      for (const r of reqs as any[]) {
+        const cat = r.category || r.ai_category || 'UNKNOWN';
+        if (!catCounts.has(cat)) catCounts.set(cat, []);
+        catCounts.get(cat)!.push(r.id);
+
+        if (r.machine_id) {
+          if (!machineCounts.has(r.machine_id)) machineCounts.set(r.machine_id, []);
+          machineCounts.get(r.machine_id)!.push(r.id);
+        }
+
+        if (r.priority === 'CRITICAL') criticalCount++;
+        if (r.sla_deadline && new Date(r.sla_deadline) < now && r.status !== 'COMPLETED' && r.status !== 'CLOSED') {
+          overdueCount++;
+        }
+      }
+
+      for (const [machineId, ids] of machineCounts) {
+        if (ids.length >= 3) {
+          anomalies.push({
+            type: 'RECURRING_MACHINE_FAILURE',
+            severity: 'HIGH',
+            description: `Machine has ${ids.length} service requests — possible systemic issue`,
+            affected_items: ids,
+          });
+        }
+      }
+
+      for (const [cat, ids] of catCounts) {
+        if (ids.length >= 3) {
+          anomalies.push({
+            type: 'CATEGORY_SPIKE',
+            severity: 'MEDIUM',
+            description: `${cat} category has ${ids.length} requests — higher than normal`,
+            affected_items: ids,
+          });
+        }
+      }
+
+      if (overdueCount > 0) {
+        anomalies.push({
+          type: 'SLA_BREACH_CLUSTER',
+          severity: overdueCount >= 3 ? 'HIGH' : 'MEDIUM',
+          description: `${overdueCount} service request(s) have breached SLA deadlines`,
+          affected_items: [],
+        });
+      }
+
+      if (criticalCount >= 2) {
+        anomalies.push({
+          type: 'CRITICAL_SURGE',
+          severity: 'HIGH',
+          description: `${criticalCount} critical-priority requests detected — unusual volume`,
+          affected_items: [],
+        });
+      }
+
       return res.json({
-        anomalies: [],
-        summary: 'No anomalies detected (stub mode)',
+        anomalies,
+        summary: anomalies.length > 0
+          ? `Detected ${anomalies.length} anomal${anomalies.length === 1 ? 'y' : 'ies'} across ${reqs.length} recent requests`
+          : `No anomalies detected across ${reqs.length} recent requests`,
         source: 'stub',
       });
     } catch (err: unknown) {

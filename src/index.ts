@@ -1,9 +1,11 @@
 import { buildApp } from './app';
 import { env } from './config/env';
+import { initWebSocket } from './services/websocket';
 
 const app = buildApp();
 
 const server = app.listen(env.PORT, () => {
+  initWebSocket(server);
   /* eslint-disable no-console */
   console.log(`\n🚀 DQBH API running on port ${env.PORT}  [${env.NODE_ENV}]`);
   console.log(`   Health:   http://localhost:${env.PORT}/health`);

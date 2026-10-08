@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   ClipboardList,
@@ -13,6 +13,7 @@ import {
   Activity,
   Zap,
   ArrowRight,
+  Plus,
 } from 'lucide-react';
 import {
   BarChart,
@@ -28,9 +29,11 @@ import {
 } from 'recharts';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import { format } from 'date-fns';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
-import type { DashboardStats, HeatmapCard, StatusColor } from '@/lib/types';
+import { useRealtimeRefresh } from '@/hooks/useWebSocket';
+import type { DashboardStats, HeatmapCard, StatusColor, ServiceRequest } from '@/lib/types';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -92,6 +95,165 @@ function PieTooltip({ active, payload }: { active?: boolean; payload?: Array<{ n
   );
 }
 
+// ---------------------------------------------------------------------------
+// Status / priority badge helpers (shared with customer dashboard)
+// ---------------------------------------------------------------------------
+const statusBadgeVariant = (status: string): 'success' | 'warning' | 'danger' | 'info' | 'default' => {
+  if (['COMPLETED', 'VERIFIED', 'CLOSED'].includes(status)) return 'success';
+  if (['VALIDATING', 'PENDING_APPROVAL'].includes(status)) return 'warning';
+  if (['EXCEPTION'].includes(status)) return 'danger';
+  if (['SUBMITTED', 'APPROVED', 'ASSIGNED', 'IN_PROGRESS'].includes(status)) return 'info';
+  return 'default';
+};
+
+const CUST_PRIORITY_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'default'> = {
+  CRITICAL: 'danger',
+  HIGH: 'warning',
+  MEDIUM: 'info',
+  LOW: 'success',
+};
+
+// ---------------------------------------------------------------------------
+// Customer Dashboard
+// ---------------------------------------------------------------------------
+function CustomerDashboard() {
+  const { user } = useAuth();
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await api.get<{ service_requests: ServiceRequest[]; meta: { total: number } }>(
+          '/api/service-requests?limit=50'
+        );
+        setRequests(res?.service_requests ?? []);
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : 'Failed to load your requests');
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const totalRequests = requests.length;
+  const activeRequests = requests.filter(r =>
+    !['COMPLETED', 'VERIFIED', 'CLOSED'].includes(r.status ?? '')
+  ).length;
+  const completedRequests = requests.filter(r =>
+    ['COMPLETED', 'VERIFIED', 'CLOSED'].includes(r.status ?? '')
+  ).length;
+
+  // Show up to 6 most recent
+  const recentRequests = requests.slice(0, 6);
+
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-[60vh]"><LoadingSpinner /></div>;
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+      className="space-y-6"
+    >
+      {/* Welcome banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-card)] p-5 sm:p-6">
+        <div>
+          <p className="text-sm text-[var(--text-muted)] mb-0.5">Welcome back,</p>
+          <h1 className="text-2xl lg:text-3xl font-bold text-[var(--text-primary)] tracking-tight">
+            {user?.full_name?.split(' ')[0] ?? 'Customer'}
+          </h1>
+          <p className="text-sm text-[var(--text-secondary)] mt-1.5">
+            {activeRequests > 0
+              ? `You have ${activeRequests} active service request${activeRequests > 1 ? 's' : ''}.`
+              : 'You have no active requests right now.'}
+          </p>
+        </div>
+        <Link
+          href="/service-requests"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white text-sm font-semibold shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 transition-shadow self-start sm:self-center"
+        >
+          <Plus className="w-4 h-4" />
+          New Service Request
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard title="Total Requests" value={totalRequests} icon={<ClipboardList size={20} />} color="blue" />
+        <StatCard title="Active" value={activeRequests} icon={<Activity size={20} />} color="amber" />
+        <StatCard title="Completed" value={completedRequests} icon={<CheckCircle2 size={20} />} color="emerald" />
+      </div>
+
+      {/* Recent requests */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">Recent Requests</h2>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">Your latest service requests</p>
+          </div>
+          <Link
+            href="/service-requests"
+            className="text-sm text-[var(--accent-blue)] hover:underline flex items-center gap-1"
+          >
+            View all <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {recentRequests.length === 0 ? (
+          <div className="glass-card p-12 text-center">
+            <ClipboardList className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-3" />
+            <p className="text-[var(--text-secondary)] mb-4">You have not created any service requests yet.</p>
+            <Link
+              href="/service-requests"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent-blue)] text-white text-sm font-medium hover:opacity-90 transition"
+            >
+              <Plus className="w-4 h-4" />
+              Create Your First Request
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {recentRequests.map(sr => (
+              <Link key={sr.id} href={`/service-requests/${sr.id}`}>
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="glass-card p-4 hover:border-[var(--border-glow)] transition cursor-pointer group h-full"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="font-mono text-xs text-[var(--accent-blue)]">{sr.request_number}</span>
+                    <Badge variant={CUST_PRIORITY_VARIANT[sr.priority] || 'default'}>{sr.priority}</Badge>
+                  </div>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2 line-clamp-2 group-hover:text-[var(--accent-blue)] transition">
+                    {sr.title}
+                  </h3>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant={statusBadgeVariant(sr.status ?? '')}>
+                      {(sr.status ?? '').replace(/_/g, ' ')}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-[var(--text-muted)] space-y-0.5 mt-auto">
+                    <p>{sr.machines?.name ?? 'No machine assigned'}</p>
+                    <p>{sr.created_at ? format(new Date(sr.created_at), 'dd MMM yyyy') : '-'}</p>
+                  </div>
+                </motion.div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Admin / Ops Manager Dashboard
+// ---------------------------------------------------------------------------
 export default function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -102,36 +264,40 @@ export default function DashboardPage() {
 
   const hasAccess = user && ALLOWED_ROLES.includes(user.role);
 
-  useEffect(() => {
+  const loadDashboard = useCallback(async () => {
     if (!hasAccess) { setLoading(false); return; }
-    async function load() {
-      try {
-        const [dashRaw, heatRaw] = await Promise.all([
-          api.get<any>('/api/reports/dashboard'),
-          api.get<any>('/api/dashboard/sla-heatmap'),
-        ]);
-        const inner = dashRaw?.dashboard ?? dashRaw ?? {};
-        const sr = inner?.service_requests ?? {};
-        const byStatus = sr?.by_status ?? {};
-        setStats({
-          total_requests: sr?.total ?? 0,
-          open_requests: sr?.active ?? 0,
-          in_progress: byStatus['IN_PROGRESS'] ?? 0,
-          completed: (byStatus['COMPLETED'] ?? 0) + (byStatus['CLOSED'] ?? 0) + (byStatus['VERIFIED'] ?? 0),
-          avg_resolution_hours: 0,
-          by_priority: sr?.by_priority ?? {},
-          by_category: sr?.by_category ?? {},
-          by_status: byStatus,
-        });
-        setHeatmap(heatRaw?.heatmap ?? (Array.isArray(heatRaw) ? heatRaw : []));
-      } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : 'Failed to load dashboard data');
-      } finally {
-        setLoading(false);
-      }
+    try {
+      const [dashRaw, heatRaw] = await Promise.all([
+        api.get<any>('/api/reports/dashboard'),
+        api.get<any>('/api/dashboard/sla-heatmap'),
+      ]);
+      const inner = dashRaw?.dashboard ?? dashRaw ?? {};
+      const sr = inner?.service_requests ?? {};
+      const byStatus = sr?.by_status ?? {};
+      setStats({
+        total_requests: sr?.total ?? 0,
+        open_requests: sr?.active ?? 0,
+        in_progress: byStatus['IN_PROGRESS'] ?? 0,
+        completed: (byStatus['COMPLETED'] ?? 0) + (byStatus['CLOSED'] ?? 0) + (byStatus['VERIFIED'] ?? 0),
+        avg_resolution_hours: 0,
+        by_priority: sr?.by_priority ?? {},
+        by_category: sr?.by_category ?? {},
+        by_status: byStatus,
+      });
+      setHeatmap(heatRaw?.heatmap ?? (Array.isArray(heatRaw) ? heatRaw : []));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
     }
-    load();
   }, [hasAccess]);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  // Refresh dashboard stats when service requests change via WebSocket
+  useRealtimeRefresh('sr_update', loadDashboard);
 
   const priorityData = useMemo(() => {
     if (!stats) return [];
@@ -167,18 +333,9 @@ export default function DashboardPage() {
     return 'red';
   }, [stats]);
 
+  // Customer dashboard for non-admin/ops users
   if (!hasAccess && !loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.2 }}
-          className="glass-card p-10 text-center max-w-md">
-          <Shield className="w-16 h-16 text-[var(--accent-amber)] mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">Access Restricted</h2>
-          <p className="text-[var(--text-secondary)]">Only Admin and Ops Manager roles can view the management dashboard.</p>
-        </motion.div>
-      </div>
-    );
+    return <CustomerDashboard />;
   }
 
   if (loading) {
