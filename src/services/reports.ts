@@ -14,7 +14,7 @@ function withSite(q: any, siteId?: string): any {
 export async function getDashboardStats(siteId?: string) {
   const [srRows, machineRows, techRows, exRows] = await Promise.all([
     (async () => {
-      const { data } = await withSite(supabase.from('service_requests').select('status'), siteId);
+      const { data } = await withSite(supabase.from('service_requests').select('status, priority, category'), siteId);
       return data ?? [];
     })(),
     (async () => {
@@ -35,7 +35,13 @@ export async function getDashboardStats(siteId?: string) {
   ]);
 
   const statusCounts: Record<string, number> = {};
-  srRows.forEach((r: any) => (statusCounts[r.status] = (statusCounts[r.status] || 0) + 1));
+  const priorityCounts: Record<string, number> = {};
+  const categoryCounts: Record<string, number> = {};
+  srRows.forEach((r: any) => {
+    statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+    if (r.priority) priorityCounts[r.priority] = (priorityCounts[r.priority] || 0) + 1;
+    if (r.category) categoryCounts[r.category] = (categoryCounts[r.category] || 0) + 1;
+  });
 
   const machineCounts: Record<string, number> = {};
   machineRows.forEach((m: any) => (machineCounts[m.status] = (machineCounts[m.status] || 0) + 1));
@@ -49,6 +55,8 @@ export async function getDashboardStats(siteId?: string) {
     service_requests: {
       total: srRows.length,
       by_status: statusCounts,
+      by_priority: priorityCounts,
+      by_category: categoryCounts,
       active: ACTIVE_STATUSES.reduce((sum, s) => sum + (statusCounts[s] || 0), 0),
     },
     machines: { total: machineRows.length, by_status: machineCounts },

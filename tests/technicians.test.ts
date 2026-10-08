@@ -41,7 +41,11 @@ describe('technicians', () => {
 
   it('filters by available=true', async () => {
     const u = seedUser('OPS_MANAGER');
-    seedTable('technicians', [tech({ is_available: true }), tech({ is_available: false })]);
+    seedTable('technicians', [
+      tech({ is_available: true, current_job_count: 1, max_concurrent_jobs: 3 }),
+      tech({ is_available: true, current_job_count: 4, max_concurrent_jobs: 3 }),
+      tech({ is_available: false }),
+    ]);
     const res = await request(app).get('/api/technicians?available=true').set('Authorization', u.bearer).expect(200);
     expect(res.body.technicians).toHaveLength(1);
   });

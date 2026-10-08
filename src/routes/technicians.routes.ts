@@ -7,6 +7,7 @@ import { parseListQuery, searchExpr, buildMeta } from '../utils/query';
 import { unwrap, wrap, wrapList, created } from '../utils/api-response';
 import { idParam } from '../schemas/common';
 import { technicianCreateSchema, technicianUpdateSchema } from '../schemas/technicians';
+import { hasTechnicianCapacity } from '../utils/technician';
 
 const router = Router();
 
@@ -24,10 +25,16 @@ router.get(
       .from('technicians')
       .select('*, users(full_name, email, phone), sites(name, code)', { count: 'exact' });
     if (req.query.site_id) q = q.eq('site_id', String(req.query.site_id));
-    if (req.query.available === 'true') q = q.eq('is_available', true);
+    const onlyAvailable = req.query.available === 'true';
+    if (onlyAvailable) q = q.eq('is_available', true);
     if (lp.q) q = q.or(searchExpr(['employee_code'], lp.q));
-    q = q.order(lp.sort, { ascending: lp.order === 'asc' }).range(lp.from, lp.to);
+    q = q.order(lp.sort, { ascending: lp.order === 'asc' });
+    if (!onlyAvailable) q = q.range(lp.from, lp.to);
     const result = await q;
+    if (onlyAvailable) {
+      const eligible = unwrap<any[]>(result).filter(hasTechnicianCapacity);
+      return res.json(wrapList('technicians', eligible.slice(lp.from, lp.to + 1), buildMeta(lp, eligible.length)));
+    }
     res.json(wrapList('technicians', unwrap(result), buildMeta(lp, result.count)));
   }),
 );

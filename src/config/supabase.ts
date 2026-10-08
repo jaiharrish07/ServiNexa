@@ -17,6 +17,13 @@ export const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY,
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
+/** A fresh anon client for password login; never mutate the service-role client session. */
+export function createAuthClient() {
+  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 // Anon credentials for verifying user JWTs issued to the frontend.
 export const supabaseAnonUrl = env.SUPABASE_URL;
 export const supabaseAnonKey = env.SUPABASE_ANON_KEY;

@@ -47,14 +47,29 @@ describe('work-orders', () => {
 
   it('OPS_MANAGER creates a work order with a generated number (201)', async () => {
     const u = seedUser('OPS_MANAGER');
+    const requestId = randomUUID();
+    const technicianId = randomUUID();
+    seedTable('service_requests', [{ id: requestId, status: 'ASSIGNED', assigned_technician_id: technicianId }]);
     const res = await request(app)
       .post('/api/work-orders')
       .set('Authorization', u.bearer)
-      .send({ service_request_id: randomUUID(), technician_id: randomUUID(), estimated_hours: 3 })
+      .send({ service_request_id: requestId, technician_id: technicianId, estimated_hours: 3 })
       .expect(201);
     expect(res.body.work_order.order_number).toMatch(/^WO-\d{8}-\d{3}$/);
     expect(res.body.work_order.status).toBe('PENDING');
     expect(getTable('work_orders')).toHaveLength(1);
+  });
+
+  it('rejects a work order for an unassigned request', async () => {
+    const u = seedUser('OPS_MANAGER');
+    const requestId = randomUUID();
+    seedTable('service_requests', [{ id: requestId, status: 'DRAFT', assigned_technician_id: null }]);
+    await request(app)
+      .post('/api/work-orders')
+      .set('Authorization', u.bearer)
+      .send({ service_request_id: requestId, technician_id: randomUUID() })
+      .expect(400);
+    expect(getTable('work_orders')).toHaveLength(0);
   });
 
   it('CUSTOMER cannot create a work order (403)', async () => {
@@ -75,9 +90,13 @@ describe('work-orders', () => {
       .expect(400);
   });
 
-  it('patches work order status', async () => {
+  it('assigned technician can advance their work order status', async () => {
     const u = seedUser('TECHNICIAN');
-    const w = wo();
+    const techId = randomUUID();
+    const requestId = randomUUID();
+    const w = wo({ technician_id: techId, service_request_id: requestId });
+    seedTable('technicians', [{ id: techId, user_id: u.id, site_id: randomUUID() }]);
+    seedTable('service_requests', [{ id: requestId, requester_id: randomUUID(), assigned_technician_id: techId, status: 'ASSIGNED' }]);
     seedTable('work_orders', [w]);
     const res = await request(app)
       .patch(`/api/work-orders/${w.id}`)
@@ -85,6 +104,18 @@ describe('work-orders', () => {
       .send({ status: 'IN_PROGRESS' })
       .expect(200);
     expect(res.body.work_order.status).toBe('IN_PROGRESS');
+  });
+
+  it('technician cannot update another technician\'s work order', async () => {
+    const u = seedUser('TECHNICIAN');
+    const requestId = randomUUID();
+    const assignedTechId = randomUUID();
+    const callerTechId = randomUUID();
+    const w = wo({ technician_id: assignedTechId, service_request_id: requestId });
+    seedTable('technicians', [{ id: callerTechId, user_id: u.id, site_id: randomUUID() }]);
+    seedTable('service_requests', [{ id: requestId, requester_id: randomUUID(), assigned_technician_id: assignedTechId, status: 'ASSIGNED' }]);
+    seedTable('work_orders', [w]);
+    await request(app).patch(`/api/work-orders/${w.id}`).set('Authorization', u.bearer).send({ status: 'IN_PROGRESS' }).expect(404);
   });
 
   it('404 patching unknown id', async () => {

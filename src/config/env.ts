@@ -17,6 +17,7 @@ const schema = z.object({
 
   AI_SERVICE_URL: z.string().default('http://localhost:8000'),
   AI_TIMEOUT_MS: z.coerce.number().default(5000),
+  AI_SERVICE_TOKEN: z.string().min(32).optional(),
 
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   CORS_ORIGINS: z.string().optional(),
@@ -40,9 +41,9 @@ export const env = parsed.data;
 // Fail fast if someone ships to production without real Supabase credentials.
 if (isProd) {
   const placeholders = [
-    env.SUPABASE_URL.includes('localhost'),
-    env.SUPABASE_SERVICE_KEY.startsWith('placeholder'),
-    env.SUPABASE_ANON_KEY.startsWith('placeholder'),
+    /localhost|your-project-ref|xxxxx|placeholder/i.test(env.SUPABASE_URL),
+    /your-|xxxxx|placeholder|example/i.test(env.SUPABASE_SERVICE_KEY),
+    /your-|xxxxx|placeholder|example/i.test(env.SUPABASE_ANON_KEY),
   ];
   if (placeholders.some(Boolean)) {
     // eslint-disable-next-line no-console
